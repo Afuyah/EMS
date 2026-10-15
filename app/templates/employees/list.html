@@ -1,0 +1,257 @@
+{% extends "layouts/app.html" %}
+{% from "partials/_ui.html" import kpi, avatar, color_badge, progress, card, empty_state, btn, page_header %}
+
+{% block page_title %}Employees{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="{
+  q: '',
+  dept: '',
+  status: '',
+  shown: 0,
+  match(el) {
+    const needle = this.q.trim().toLowerCase();
+    if (needle && !(el.dataset.name || '').includes(needle)) return false;
+    if (this.dept && el.dataset.dept !== this.dept) return false;
+    if (this.status === 'active' && el.dataset.active !== 'true') return false;
+    if (this.status === 'inactive' && el.dataset.active === 'true') return false;
+    return true;
+  },
+  apply() {
+    let visible = 0;
+    this.$root.querySelectorAll('[data-emp-row]').forEach((el) => {
+      const ok = this.match(el);
+      el.hidden = !ok;
+      if (ok) visible += 1;
+    });
+    this.shown = visible;
+  }
+}" x-init="apply()" x-effect="q; dept; status; $nextTick(() => apply())">
+
+  {{ page_header('Employees',
+                 'Everyone on record, with their attendance health and leave position.',
+                 'People') }}
+
+  <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    {{ kpi('Active employees', total_active, page_info.total ~ ' match the current filter', 'brand',
+           'M16 14a4 4 0 10-8 0M12 10a3 3 0 100-6 3 3 0 000 6M4 20a8 8 0 0116 0') }}
+    {{ kpi('Departments', distribution|length, 'with headcount') }}
+    {% set healthy = colors.distribution|selectattr('color','equalto','green')|first %}
+    {{ kpi('Healthy', healthy.total if healthy else 0,
+           (healthy.percent if healthy else 0) ~ '% of staff at green', 'emerald',
+           'M5 13l4 4L19 7') }}
+    {% set at_risk = colors.distribution|selectattr('color','in',['orange','red'])|list %}
+    {{ kpi('At risk', at_risk|sum(attribute='total'), 'orange or red badge',
+           'rose' if at_risk|sum(attribute='total') else 'slate',
+           'M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z') }}
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-3">
+    <div class="lg:col-span-2">
+      {% call card('Department distribution') %}
+        {% set peak = distribution|map(attribute='total')|max if distribution else 1 %}
+        <div class="space-y-3.5">
+          {% for row in distribution %}
+            <div>
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-medium text-slate-700">{{ row.department_name }}
+                  <span class="font-normal text-slate-400">({{ row.department_code }})</span>
+                </span>
+                <span class="font-semibold text-slate-700">{{ row.total }}</span>
+              </div>
+              <div class="mt-1.5">{{ progress(row.total, peak) }}</div>
+            </div>
+          {% else %}
+            <p class="text-sm text-slate-500">No departments yet.</p>
+          {% endfor %}
+        </div>
+      {% endcall %}
+    </div>
+
+    {% call card('Attendance health') %}
+      <div class="space-y-3">
+        {% for row in colors.distribution %}
+          <div class="flex items-center justify-between text-xs">
+            <span>{{ color_badge(row.color) }}</span>
+            <span class="font-semibold text-slate-700">{{ row.total }}
+              <span class="font-normal text-slate-400">&middot; {{ row.percent }}%</span>
+            </span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endcall %}
+  </div>
+
+  <!-- Toolbar: instant client-side filtering over the rendered rows -->
+  <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-900/5">
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="relative lg:col-span-2">
+        <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" d="M21 21l-4.3-4.3M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/>
+          </svg>
+        </span>
+        <input type="search" x-model="q" placeholder="Filter this page by name, number or email&hellip;"
+               class="block w-full rounded-lg border-0 py-2 pl-9 pr-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-600">
+      </div>
+
+      <select x-model="dept"
+              class="block w-full rounded-lg border-0 py-2 pl-3 pr-9 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+        <option value="">All departments</option>
+        {% for department in departments %}
+          <option value="{{ department.id }}">{{ department.name }}</option>
+        {% endfor %}
+      </select>
+
+      <select x-model="status"
+              class="block w-full rounded-lg border-0 py-2 pl-3 pr-9 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+        <option value="">Any status</option>
+        <option value="active">Active only</option>
+        <option value="inactive">Inactive only</option>
+      </select>
+    </div>
+
+    <!-- Server-side filters (persisted in the URL) -->
+    <form method="get" class="mt-3 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-3">
+      <div class="min-w-[12rem] flex-1">
+        <label class="block text-xs font-medium text-slate-600">Server search (all pages)</label>
+        <input type="search" name="q" value="{{ filters.q }}" placeholder="Name, number or email"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600">Colour</label>
+        <select name="color"
+                class="mt-1 block rounded-lg border-0 py-2 pl-3 pr-9 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+          <option value="">Any</option>
+          {% for colour in ['green','yellow','orange','red'] %}
+            <option value="{{ colour }}" {{ 'selected' if filters.color == colour }}>{{ colour|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <input type="hidden" name="department_id" value="{{ filters.department_id or '' }}">
+      <input type="hidden" name="is_active" value="{{ filters.is_active }}">
+      <button type="submit"
+              class="rounded-lg bg-slate-800 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-700">Search</button>
+      <a href="{{ url_for('views.employees') }}"
+         class="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">Reset</a>
+    </form>
+  </div>
+
+  <!-- Table -->
+  <section class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-900/5">
+    <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+      <h2 class="text-sm font-semibold text-slate-900">
+        {{ page_info.total }} employee{{ '' if page_info.total == 1 else 's' }}
+        <span x-show="q || dept || status" x-cloak class="ml-1 font-normal text-slate-500">
+          &middot; <span x-text="shown"></span> shown
+        </span>
+      </h2>
+      <a href="{{ url_for('views.employee_new') }}"
+         class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor">
+          <path stroke-linecap="round" d="M12 5v14M5 12h14"/>
+        </svg>
+        Add employee
+      </a>
+      <a href="{{ url_for('views.employees_gender') }}"
+         class="inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+        Record gender
+      </a>
+    </header>
+
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="px-5 py-2.5 text-left font-semibold">Employee</th>
+            <th class="px-5 py-2.5 text-left font-semibold">Department</th>
+            <th class="px-5 py-2.5 text-left font-semibold">Tenure</th>
+            <th class="px-5 py-2.5 text-left font-semibold">Attendance YTD</th>
+            <th class="px-5 py-2.5 text-left font-semibold">Leave</th>
+            <th class="px-5 py-2.5 text-center font-semibold">Disc.</th>
+            <th class="px-5 py-2.5 text-left font-semibold">Badge</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for row in rows %}
+            {% set employee = row.employee %}
+            <tr data-emp-row
+                data-name="{{ (employee.full_name ~ ' ' ~ employee.employee_no ~ ' ' ~ employee.email)|lower }}"
+                data-dept="{{ employee.department_id }}"
+                data-active="{{ 'true' if employee.is_active else 'false' }}"
+                class="transition hover:bg-slate-50/70">
+              <td class="px-5 py-3">
+                <div class="flex items-center gap-3">
+                  {{ avatar(employee.first_name, employee.last_name, employee.current_color, 'h-9 w-9') }}
+                  <div class="min-w-0">
+                    <a href="{{ url_for('views.employee_detail', employee_id=employee.id) }}"
+                       class="font-medium text-slate-900 hover:text-brand-600">{{ employee.full_name }}</a>
+                    <p class="truncate text-xs text-slate-500">{{ employee.employee_no }} &middot; {{ employee.email }}</p>
+                  </div>
+                </div>
+              </td>
+              <td class="px-5 py-3">
+                <p class="text-slate-700">{{ employee.department.name if employee.department else '—' }}</p>
+                <p class="text-xs text-slate-500">{{ employee.position.title if employee.position else 'No position' }}</p>
+              </td>
+              <td class="px-5 py-3 text-slate-600">{{ row.tenure }}</td>
+              <td class="px-5 py-3">
+                <div class="flex flex-wrap items-center gap-2 text-xs">
+                  <span class="{{ 'font-medium text-amber-600' if row.late_days else 'text-slate-400' }}">{{ row.late_days }} late</span>
+                  <span class="{{ 'font-medium text-rose-600' if row.absent_days else 'text-slate-400' }}">{{ row.absent_days }} absent</span>
+                </div>
+                <p class="text-xs text-slate-500">{{ '%.1fh'|format(row.avg_worked_minutes / 60) }} avg/day</p>
+              </td>
+              <td class="px-5 py-3">
+                {% if row.on_leave_today %}
+                  <span class="inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 ring-1 ring-inset ring-sky-600/20">On leave</span>
+                {% else %}
+                  <span class="text-xs text-slate-600">{{ row.leave_entitlement.available }}/{{ row.leave_entitlement.entitled }} days</span>
+                {% endif %}
+              </td>
+              <td class="px-5 py-3 text-center">
+                {% if row.disciplinary_count %}
+                  <span class="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-rose-50 px-1.5 text-xs font-bold text-rose-700 ring-1 ring-inset ring-rose-600/20">{{ row.disciplinary_count }}</span>
+                {% else %}
+                  <span class="text-slate-300">—</span>
+                {% endif %}
+              </td>
+              <td class="px-5 py-3">
+                <div class="flex flex-col items-start gap-1">
+                  {{ color_badge(employee.current_color) }}
+                  {% if not employee.is_active %}
+                    <span class="text-[10px] font-medium uppercase tracking-wide text-slate-400">Inactive</span>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="7" class="px-5 py-14 text-center">
+                <p class="text-sm font-medium text-slate-700">No employees match these filters</p>
+                <p class="mt-1 text-xs text-slate-500">Try clearing the search or choosing a different department.</p>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if page_info.pages > 1 %}
+      <footer class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 text-sm">
+        <p class="text-slate-500">Page {{ page_info.page }} of {{ page_info.pages }}</p>
+        <div class="flex gap-2">
+          {% if page_info.has_prev %}
+            <a href="{{ url_for('views.employees', page=page_info.page - 1, q=filters.q, department_id=filters.department_id, is_active=filters.is_active, color=filters.color) }}"
+               class="rounded-lg bg-white px-3 py-1.5 font-medium text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">&larr; Previous</a>
+          {% endif %}
+          {% if page_info.has_next %}
+            <a href="{{ url_for('views.employees', page=page_info.page + 1, q=filters.q, department_id=filters.department_id, is_active=filters.is_active, color=filters.color) }}"
+               class="rounded-lg bg-white px-3 py-1.5 font-medium text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">Next &rarr;</a>
+          {% endif %}
+        </div>
+      </footer>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

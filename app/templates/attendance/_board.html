@@ -1,0 +1,64 @@
+{% from "partials/_ui.html" import avatar, status_badge %}
+<section class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-900/5">
+  <header class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
+    <h2 class="text-sm font-semibold text-slate-900">
+      {{ headcount }} employee{{ '' if headcount == 1 else 's' }}
+      <span class="font-normal text-slate-400">&middot; {{ work_date.strftime('%a %d %b %Y') }}</span>
+    </h2>
+    <span class="text-xs text-slate-500">{{ present }} present &middot; {{ late }} late &middot; {{ absent }} absent</span>
+  </header>
+
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-5 py-2.5 text-left font-semibold">Employee</th>
+          <th class="px-5 py-2.5 text-left font-semibold">Dept</th>
+          <th class="px-5 py-2.5 text-left font-semibold">In</th>
+          <th class="px-5 py-2.5 text-left font-semibold">Out</th>
+          <th class="px-5 py-2.5 text-right font-semibold">Worked</th>
+          <th class="px-5 py-2.5 text-right font-semibold">Late</th>
+          <th class="px-5 py-2.5 text-left font-semibold">Status</th>
+          <th class="px-5 py-2.5"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for row in rows %}
+          <tr class="transition hover:bg-slate-50/70">
+            <td class="px-5 py-2.5">
+              <div class="flex items-center gap-3">
+                {{ avatar(row.first_name, row.last_name, row.current_color, 'h-8 w-8') }}
+                <div class="min-w-0">
+                  <a href="{{ url_for('views.employee_detail', employee_id=row.employee_id) }}"
+                     class="font-medium text-slate-900 hover:text-brand-600">{{ row.first_name }} {{ row.last_name }}</a>
+                  <p class="text-xs text-slate-500">{{ row.employee_no }}</p>
+                </div>
+              </div>
+            </td>
+            <td class="px-5 py-2.5 text-slate-600">{{ row.department_code or '—' }}</td>
+            <td class="px-5 py-2.5 text-slate-600">{{ row.clock_in.strftime('%H:%M') if row.clock_in else '—' }}</td>
+            <td class="px-5 py-2.5 text-slate-600">{{ row.clock_out.strftime('%H:%M') if row.clock_out else '—' }}</td>
+            <td class="px-5 py-2.5 text-right text-slate-600">
+              {{ '%.1fh'|format(row.worked_minutes / 60) if row.worked_minutes else '—' }}
+            </td>
+            <td class="px-5 py-2.5 text-right">
+              {% if row.late_minutes %}<span class="font-medium text-amber-600">{{ row.late_minutes }}m</span>{% else %}<span class="text-slate-300">—</span>{% endif %}
+            </td>
+            <td class="px-5 py-2.5">{{ status_badge(row.status or 'absent') }}</td>
+            <td class="px-5 py-2.5 text-right">
+              <a href="{{ url_for('views.attendance_employee', employee_id=row.employee_id) }}"
+                 class="text-xs font-medium text-brand-600 hover:underline">History</a>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="8" class="px-5 py-14 text-center">
+              <p class="text-sm font-medium text-slate-700">No employees match these filters</p>
+              <p class="mt-1 text-xs text-slate-500">Try a different date, department or status.</p>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>

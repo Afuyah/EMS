@@ -1,0 +1,23 @@
+{% set subject = "We received your " ~ leave_type ~ " leave request" %}
+    Hello {{ employee_name }},
+
+    We have received your {{ leave_type }} leave request.
+
+      Reference : #{{ request_id }}
+      Window    : {{ start_date }} to {{ end_date }}
+      Duration  : {{ days }} day(s)
+      Status    : {{ status }}
+
+    {% if status == 'suggested' %}
+    A suggested window is ready for you to accept or decline. Your first decline
+    offers an alternative window; a second decline confirms the current window.
+    {% else %}
+    Your request is with HR for approval. You will receive another email as soon
+    as a decision is made.
+    {% endif %}
+
+    Review it here: {{ link }}
+
+    --
+    Employee Management System
+    This is an automated message; please do not reply directly.

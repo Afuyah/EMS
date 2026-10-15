@@ -1,0 +1,365 @@
+{% extends "layouts/app.html" %}
+{% from "partials/_macros.html" import kpi, color_badge %}
+
+{% block page_title %}Lateness &amp; absenteeism rules{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="{ tab: '{{ request.args.get('tab', 'colors') }}' }">
+
+  <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <h1 class="text-lg font-bold text-slate-900">Lateness &amp; absenteeism rules</h1>
+    <p class="mt-1 max-w-3xl text-sm text-slate-500">
+      Two independent ladders, both scopeable to a single department or left global.
+      A department rule always overrides the global rule of the same kind.
+    </p>
+    <div class="mt-4 rounded-xl border border-brand-200 bg-brand-50/60 p-3.5">
+      <p class="text-xs text-brand-900">
+        <strong>Before tuning these:</strong> what counts as "late" is decided by the
+        <a href="{{ url_for('views.attendance_policies') }}" class="font-semibold underline">shift &amp; lateness policy</a>
+        &mdash; arrival time, grace period and the very-late threshold. These ladders only
+        act on the resulting counts.
+      </p>
+    </div>
+
+    <div class="mt-4 grid gap-3 text-xs sm:grid-cols-2">
+      <div class="rounded-lg bg-slate-50 p-3 ring-1 ring-inset ring-slate-200">
+        <p class="font-semibold text-slate-800">Attendance health ladder</p>
+        <p class="mt-1 text-slate-600">
+          Sets the employee badge colour. Applied nightly by
+          <code class="rounded bg-white px-1">color_recompute</code> at 02:30.
+          A rule matches when <em>both</em> thresholds are reached.
+        </p>
+      </div>
+      <div class="rounded-lg bg-slate-50 p-3 ring-1 ring-inset ring-slate-200">
+        <p class="font-semibold text-slate-800">Disciplinary ladder</p>
+        <p class="mt-1 text-slate-600">
+          Raises warnings and suspensions. Applied nightly by
+          <code class="rounded bg-white px-1">disciplinary_evaluator</code> at 03:00.
+          A rule matches when its single counter reaches the threshold.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    {{ kpi('Colour rules', summary.color_total,
+           summary.color_global ~ ' global · ' ~ summary.color_department ~ ' per-department') }}
+    {{ kpi('Disciplinary rules', summary.disciplinary_total,
+           summary.disciplinary_active ~ ' active') }}
+    {{ kpi('Auto-applied', summary.disciplinary_auto, 'fire without HR review', 'amber') }}
+    {{ kpi('HR-reviewed', summary.disciplinary_manual, 'proposed, not applied', 'emerald') }}
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex gap-2">
+    <button @click="tab = 'colors'"
+            :class="tab === 'colors' ? 'bg-brand-600 text-white ring-brand-600' : 'bg-white text-slate-600 ring-slate-300 hover:bg-slate-50'"
+            class="rounded-lg px-4 py-2 text-sm font-medium ring-1 ring-inset">
+      Attendance health
+    </button>
+    <button @click="tab = 'disciplinary'"
+            :class="tab === 'disciplinary' ? 'bg-brand-600 text-white ring-brand-600' : 'bg-white text-slate-600 ring-slate-300 hover:bg-slate-50'"
+            class="rounded-lg px-4 py-2 text-sm font-medium ring-1 ring-inset">
+      Disciplinary
+    </button>
+  </div>
+
+  <!-- ============================ COLOUR LADDER ============================ -->
+  <div x-show="tab === 'colors'" class="space-y-6">
+
+    <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+      <div class="border-b border-slate-100 px-5 py-4">
+        <h2 class="text-sm font-semibold text-slate-900">Colour ladder</h2>
+        <p class="mt-1 text-xs text-slate-500">
+          Evaluated by descending priority; the first rule whose thresholds are
+          both met wins. Ties break toward the more severe colour.
+        </p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-100 text-sm">
+          <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-5 py-2 text-left font-medium">Colour</th>
+              <th class="px-5 py-2 text-left font-medium">Scope</th>
+              <th class="px-5 py-2 text-right font-medium">Min lates</th>
+              <th class="px-5 py-2 text-right font-medium">Min absences</th>
+              <th class="px-5 py-2 text-right font-medium">Window</th>
+              <th class="px-5 py-2 text-right font-medium">Priority</th>
+              <th class="px-5 py-2 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for rule in color_rules %}
+              <tr class="hover:bg-slate-50">
+                <td class="px-5 py-3">{{ color_badge(rule.color) }}</td>
+                <td class="px-5 py-3">
+                  {% if rule.department_id %}
+                    <span class="text-slate-700">{{ rule.department.name if rule.department else rule.department_id }}</span>
+                    <span class="ml-1 rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-medium text-brand-700 ring-1 ring-inset ring-brand-600/20">overrides</span>
+                  {% else %}
+                    <span class="text-slate-500">All departments</span>
+                  {% endif %}
+                </td>
+                <td class="px-5 py-3 text-right text-slate-700">{{ rule.min_lates }}</td>
+                <td class="px-5 py-3 text-right text-slate-700">{{ rule.min_absences }}</td>
+                <td class="px-5 py-3 text-right text-slate-600">{{ rule.window_days }} days</td>
+                <td class="px-5 py-3 text-right text-slate-600">{{ rule.priority }}</td>
+                <td class="px-5 py-3">
+                  <div class="flex justify-end gap-2">
+                    <a href="{{ url_for('views.rule_color_edit', rule_id=rule.id) }}"
+                       class="text-xs font-medium text-brand-600 hover:underline">Edit</a>
+                    <form method="post" action="{{ url_for('views.rule_color_delete', rule_id=rule.id) }}"
+                          data-confirm="Delete the {{ rule.color }} rule?">
+                      <button type="submit" class="text-xs font-medium text-rose-600 hover:underline">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="7" class="px-5 py-10 text-center text-slate-500">
+                  No colour rules configured. Every employee stays green.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Add colour rule -->
+    <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <h2 class="text-sm font-semibold text-slate-900">Add a colour rule</h2>
+      <form method="post" action="{{ url_for('views.rule_color_create') }}" class="mt-4 space-y-4">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Colour *</label>
+            <select name="color" required
+                    class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+              {% for color in colors %}
+                <option value="{{ color.value }}">{{ color.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Scope *</label>
+            <select name="department_id"
+                    class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+              <option value="">All departments (global)</option>
+              {% for department in departments %}
+                <option value="{{ department.id }}">{{ department.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Priority *</label>
+            <input name="priority" type="number" min="0" value="10"
+                   class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+            <p class="mt-1 text-xs text-slate-500">Higher wins. Use 10 / 20 / 30 for the ladder.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Minimum late days *</label>
+            <input name="min_lates" type="number" min="0" value="3" required
+                   class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Minimum absences *</label>
+            <input name="min_absences" type="number" min="0" value="0" required
+                   class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Window (days) *</label>
+            <input name="window_days" type="number" min="1" max="365" value="30" required
+                   class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+          </div>
+        </div>
+        <p class="text-xs text-slate-500">
+          A rule matches when <strong>both</strong> minimums are reached inside the window.
+          Green is the fallback and always keeps zero thresholds.
+        </p>
+        <button type="submit"
+                class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-500">
+          Add colour rule
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================== DISCIPLINARY LADDER ======================== -->
+  <div x-show="tab === 'disciplinary'" x-cloak class="space-y-6">
+
+    <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+      <div class="border-box border-b border-slate-100 px-5 py-4">
+        <h2 class="text-sm font-semibold text-slate-900">Disciplinary thresholds</h2>
+        <p class="mt-1 text-xs text-slate-500">
+          The most serious matching threshold is the one recorded, and a rule can
+          fire at most once per employee per day.
+        </p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-100 text-sm">
+          <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-5 py-2 text-left font-medium">Trigger</th>
+              <th class="px-5 py-2 text-right font-medium">Threshold</th>
+              <th class="px-5 py-2 text-left font-medium">Period</th>
+              <th class="px-5 py-2 text-left font-medium">Action</th>
+              <th class="px-5 py-2 text-left font-medium">Scope</th>
+              <th class="px-5 py-2 text-left font-medium">Apply</th>
+              <th class="px-5 py-2 text-left font-medium">State</th>
+              <th class="px-5 py-2 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for rule in disciplinary_rules %}
+              <tr class="hover:bg-slate-50 {{ 'opacity-50' if not rule.is_active }}">
+                <td class="px-5 py-3 text-slate-800">{{ rule.trigger_type.replace('_', ' ')|title }}</td>
+                <td class="px-5 py-3 text-right font-medium text-slate-900">{{ rule.threshold }}</td>
+                <td class="px-5 py-3 text-slate-600">{{ rule.period }}</td>
+                <td class="px-5 py-3">
+                  <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset
+                               {{ 'bg-amber-100 text-amber-700 ring-amber-600/20' if rule.action == 'warning'
+                                  else 'bg-orange-100 text-orange-700 ring-orange-600/20' if rule.action == 'written_warning'
+                                  else 'bg-rose-100 text-rose-700 ring-rose-600/20' }}">
+                    {{ rule.action.replace('_', ' ')|title }}
+                  </span>
+                  {% if rule.suspension_days %}
+                    <span class="ml-1 text-xs text-slate-500">{{ rule.suspension_days }} day(s)</span>
+                  {% endif %}
+                </td>
+                <td class="px-5 py-3 text-slate-600">
+                  {% if rule.department_id %}
+                    {{ rule.department.name if rule.department else rule.department_id }}
+                    <span class="ml-1 rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-medium text-brand-700 ring-1 ring-inset ring-brand-600/20">overrides</span>
+                  {% else %}All departments{% endif %}
+                </td>
+                <td class="px-5 py-3">
+                  {% if rule.auto_apply %}
+                    <span class="text-xs font-medium text-amber-700">Automatic</span>
+                  {% else %}
+                    <span class="text-xs text-slate-500">HR review</span>
+                  {% endif %}
+                </td>
+                <td class="px-5 py-3">
+                  {% if rule.is_active %}
+                    <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">Active</span>
+                  {% else %}
+                    <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-500/20">Disabled</span>
+                  {% endif %}
+                </td>
+                <td class="px-5 py-3">
+                  <div class="flex justify-end gap-2">
+                    <a href="{{ url_for('views.rule_disciplinary_edit', rule_id=rule.id) }}"
+                       class="text-xs font-medium text-brand-600 hover:underline">Edit</a>
+                    <form method="post"
+                          action="{{ url_for('views.rule_disciplinary_set_active', rule_id=rule.id, state=('false' if rule.is_active else 'true')) }}">
+                      <button type="submit" class="text-xs font-medium {{ 'text-slate-600' if rule.is_active else 'text-emerald-700' }} hover:underline">
+                        {{ 'Disable' if rule.is_active else 'Enable' }}
+                      </button>
+                    </form>
+                    <form method="post" action="{{ url_for('views.rule_disciplinary_delete', rule_id=rule.id) }}"
+                          data-confirm="Delete the {{ rule.threshold }}+ {{ rule.trigger_type }} rule?">
+                      <button type="submit" class="text-xs font-medium text-rose-600 hover:underline">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="8" class="px-5 py-10 text-center text-slate-500">
+                  No disciplinary rules configured. Nothing escalates automatically.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Add disciplinary rule -->
+    <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <h2 class="text-sm font-semibold text-slate-900">Add a disciplinary rule</h2>
+      <form method="post" action="{{ url_for('views.rule_disciplinary_create') }}"
+            class="mt-4 space-y-4" x-data="{ action: 'warning' }">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Trigger *</label>
+            <select name="trigger_type" required
+                    class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+              {% for trigger in triggers %}
+                <option value="{{ trigger.value }}">{{ trigger.value.replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Threshold *</label>
+            <input name="threshold" type="number" min="1" value="3" required
+                   class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+            <p class="mt-1 text-xs text-slate-500">Occurrences within the period.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Period *</label>
+            <select name="period" required
+                    class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+              {% for period in periods %}
+                <option value="{{ period.value }}" {{ 'selected' if period.value == 'month' }}>{{ period.value|title }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Action *</label>
+            <select name="action" x-model="action" required
+                    class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+              {% for action in actions %}
+                <option value="{{ action.value }}">{{ action.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Suspension days</label>
+            <input name="suspension_days" type="number" min="0" max="365" placeholder="1"
+                   :disabled="action !== 'suspension'"
+                   class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600 disabled:bg-slate-100">
+            <p class="mt-1 text-xs text-slate-500" x-show="action !== 'suspension'">
+              Only used by the suspension action.
+            </p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600">Scope *</label>
+            <select name="department_id"
+                    class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+              <option value="">All departments (global)</option>
+              {% for department in departments %}
+                <option value="{{ department.id }}">{{ department.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-6">
+          <label class="flex items-start gap-2">
+            <input type="checkbox" name="auto_apply" value="true"
+                   class="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-600">
+            <span class="text-sm text-slate-700">
+              Apply automatically
+              <span class="block text-xs text-slate-500">
+                Off means the action is only recommended to HR — safer for suspensions.
+              </span>
+            </span>
+          </label>
+          <label class="flex items-start gap-2">
+            <input type="checkbox" name="is_active" value="true" checked
+                   class="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-600">
+            <span class="text-sm text-slate-700">Enabled</span>
+          </label>
+        </div>
+
+        <button type="submit"
+                class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-500">
+          Add disciplinary rule
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

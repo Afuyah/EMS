@@ -1,0 +1,46 @@
+<div x-data="{ open: false }" class="relative">
+  <button @click="open = !open" @click.outside="open = false"
+          class="relative rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+          aria-label="Notifications">
+    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round"
+            d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0a3 3 0 11-6 0"/>
+    </svg>
+    {% if unread %}
+      <span class="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white ring-2 ring-white">
+        {{ unread if unread < 100 else '99+' }}
+      </span>
+    {% endif %}
+  </button>
+
+  <div x-show="open" x-cloak x-transition.origin.top.right
+       class="absolute right-0 z-40 mt-2 w-80 overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-slate-900/5">
+    <div class="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
+      <p class="text-sm font-semibold text-slate-900">Notifications</p>
+      <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">{{ unread }} unread</span>
+    </div>
+
+    <div class="max-h-80 divide-y divide-slate-100 overflow-y-auto">
+      {% for note in recent %}
+        <a href="{{ url_for('views.notifications') }}"
+           class="block px-4 py-3 transition hover:bg-slate-50 {{ 'bg-brand-50/40' if note.is_unread else '' }}">
+          <div class="flex items-start gap-2">
+            <span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full {{ 'bg-brand-500' if note.is_unread else 'bg-slate-300' }}"></span>
+            <div class="min-w-0">
+              <p class="text-xs font-semibold text-slate-800">{{ note.subject or note.event_type }}</p>
+              <p class="mt-0.5 text-xs text-slate-500">{{ note.body|truncate(72) }}</p>
+              <p class="mt-1 text-[10px] text-slate-400">{{ note.created_at.strftime('%d %b %H:%M') }}</p>
+            </div>
+          </div>
+        </a>
+      {% else %}
+        <p class="px-4 py-8 text-center text-xs text-slate-500">You have no notifications.</p>
+      {% endfor %}
+    </div>
+
+    <a href="{{ url_for('views.notifications') }}"
+       class="block border-t border-slate-100 px-4 py-2.5 text-center text-xs font-semibold text-brand-600 transition hover:bg-slate-50">
+      View all notifications
+    </a>
+  </div>
+</div>

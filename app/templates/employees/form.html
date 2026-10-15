@@ -1,0 +1,143 @@
+{% extends "layouts/app.html" %}
+
+{% block page_title %}New employee{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-3xl">
+  <form method="post" action="{{ url_for('views.employee_create') }}"
+        class="space-y-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <div>
+        <label class="block text-sm font-medium text-slate-700">First name *</label>
+        <input name="first_name" required value="{{ form.first_name or '' }}"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700">Last name *</label>
+        <input name="last_name" required value="{{ form.last_name or '' }}"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      </div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <div>
+        <label class="block text-sm font-medium text-slate-700">Email *</label>
+        <input name="email" type="email" required value="{{ form.email or '' }}"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700">Phone</label>
+        <input name="phone" value="{{ form.phone or '' }}"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-700">Gender *</label>
+      <div class="mt-1.5 flex flex-wrap gap-2">
+        {% for value, label in [('female', 'Female'), ('male', 'Male')] %}
+          <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3.5 py-2 text-sm shadow-sm transition
+                        {{ 'border-brand-500 bg-brand-50 text-brand-900 ring-1 ring-brand-500' if form.gender == value else 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50' }}">
+            <input type="radio" name="gender" value="{{ value }}" required
+                   class="h-4 w-4 border-slate-300 text-brand-600 focus:ring-brand-600"
+                   {{ 'checked' if form.gender == value }}>
+            {{ label }}
+          </label>
+        {% endfor %}
+      </div>
+      <p class="mt-1.5 text-xs text-slate-500">
+        Decides whether <strong>maternity</strong> or <strong>paternity</strong> leave
+        applies. It cannot be left blank, because the system would have no basis for
+        choosing between them.
+      </p>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2" x-data="{ dept: '{{ form.department_id or '' }}' }">
+      <div>
+        <label class="block text-sm font-medium text-slate-700">Department *</label>
+        <select name="department_id" required x-model="dept"
+                class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+          <option value="">Choose…</option>
+          {% for department in departments %}
+            <option value="{{ department.id }}">{{ department.name }} ({{ department.code }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700">Position</label>
+        <select name="position_id"
+                class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+          <option value="">None</option>
+          {% for position in positions %}
+            <option value="{{ position.id }}" x-show="dept === '{{ position.department_id }}'"
+                    {{ 'selected' if form.position_id|string == position.id|string }}>
+              {{ position.title }} · {{ position.department.code if position.department else '' }}
+            </option>
+          {% endfor %}
+        </select>
+        <p class="mt-1 text-xs text-slate-500">Only positions in the chosen department are shown.</p>
+      </div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-3">
+      <div>
+        <label class="block text-sm font-medium text-slate-700">Employee number</label>
+        <input name="employee_no" value="{{ form.employee_no or '' }}" placeholder="EMP-0001"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+        <p class="mt-1 text-xs text-slate-500">Leave blank to auto-generate.</p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700">Hire date</label>
+        <input name="hired_at" type="date" value="{{ form.hired_at or '' }}"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700">Timezone</label>
+        <input name="tz" value="{{ form.tz or 'Africa/Nairobi' }}"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      </div>
+    </div>
+
+    <label class="flex items-center gap-2">
+      <input type="checkbox" name="is_active" value="true" checked
+             class="rounded border-slate-300 text-brand-600 focus:ring-brand-600">
+      <span class="text-sm text-slate-700">Active employee</span>
+    </label>
+
+    <!-- Optional login -->
+    <div class="rounded-xl bg-slate-50 p-4 ring-1 ring-inset ring-slate-200" x-data="{ login: false }">
+      <label class="flex items-center gap-2">
+        <input type="checkbox" name="create_user" value="true" x-model="login"
+               class="rounded border-slate-300 text-brand-600 focus:ring-brand-600">
+        <span class="text-sm font-medium text-slate-800">Create a login account</span>
+      </label>
+
+      <div x-show="login" x-cloak class="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Role</label>
+          <select name="user_role"
+                  class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+            <option value="EMPLOYEE">Employee</option>
+            <option value="MANAGER">Manager</option>
+            <option value="HR">HR</option>
+            <option value="ADMIN">Admin</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Initial password</label>
+          <input name="password" type="text" placeholder="Leave blank to auto-generate"
+                 class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+        </div>
+      </div>
+    </div>
+
+    <div class="flex justify-end gap-3 border-t border-slate-100 pt-4">
+      <a href="{{ url_for('views.employees') }}"
+         class="rounded-lg px-4 py-2 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50">Cancel</a>
+      <button type="submit"
+              class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-500">Create employee</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

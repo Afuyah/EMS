@@ -1,0 +1,173 @@
+{% extends "layouts/app.html" %}
+{% from "partials/_ui.html" import kpi, card, btn, page_header %}
+
+{% block page_title %}Attendance board{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="{ showCorrection: false, record: '', clockIn: '', clockOut: '', status: '', note: '' }">
+
+  {{ page_header('Attendance board',
+                 'Who is in, who is late, and who is away, for one day at a time.',
+                 'Attendance') }}
+
+  <!-- Filters -->
+  <form method="get" action="{{ url_for('views.attendance') }}"
+        class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-900/5">
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div>
+        <label class="block text-xs font-medium text-slate-600">Date</label>
+        <input type="date" name="date" value="{{ filters.date }}"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600">Department</label>
+        <select name="department_id"
+                class="mt-1 block w-full rounded-lg border-0 py-2 pl-3 pr-9 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+          <option value="">All departments</option>
+          {% for department in departments %}
+            <option value="{{ department.id }}" {{ 'selected' if filters.department_id == department.id }}>{{ department.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600">Status</label>
+        <select name="status"
+                class="mt-1 block w-full rounded-lg border-0 py-2 pl-3 pr-9 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+          <option value="">Any status</option>
+          {% for value in ['present','late','very_late','absent','on_leave','half_day'] %}
+            <option value="{{ value }}" {{ 'selected' if filters.status == value }}>{{ value|replace('_',' ')|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600">Employee</label>
+        <input type="search" name="q" value="{{ filters.q }}" placeholder="Name or number"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      </div>
+      <div class="flex items-end gap-2">
+        <button type="submit"
+                class="flex-1 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500">Apply</button>
+        <a href="{{ url_for('views.attendance') }}"
+           class="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">Today</a>
+      </div>
+    </div>
+  </form>
+
+  <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+    {{ kpi('Headcount', headcount, work_date.strftime('%a %d %b %Y')) }}
+    {{ kpi('Present', present, 'clocked in', 'emerald') }}
+    {{ kpi('Late', late, 'past the grace period', 'amber' if late else 'slate') }}
+    {{ kpi('Absent', absent, 'no punch recorded', 'rose' if absent else 'slate') }}
+    {{ kpi('On leave', on_leave, 'approved leave', 'brand') }}
+  </div>
+
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+    <span class="inline-flex items-center gap-1.5">
+      <span class="inline-flex h-2 w-2 {{ 'animate-pulse' if is_today }} rounded-full {{ 'bg-emerald-500' if is_today else 'bg-slate-400' }}"></span>
+      {{ 'Live — refreshes every 60s' if is_today else 'Historical view for ' ~ work_date.strftime('%d %b %Y') }}
+    </span>
+    <span>{{ open_count }} still clocked in</span>
+    <span>Average {{ '%.1fh'|format(avg_worked / 60) }} worked</span>
+    {% if current_user.is_hr_or_admin %}
+      <button type="button" @click="showCorrection = !showCorrection"
+              class="ml-auto rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+        <span x-text="showCorrection ? 'Hide correction tool' : 'Correct a record'"></span>
+      </button>
+    {% endif %}
+  </div>
+
+  <!-- Correction tool -->
+  {% if current_user.is_hr_or_admin %}
+    <div x-show="showCorrection" x-cloak x-transition
+         class="rounded-2xl border border-amber-200 bg-amber-50/60 p-5">
+      <h2 class="text-sm font-semibold text-amber-900">Manual attendance correction</h2>
+      <p class="mt-0.5 text-xs text-amber-700">
+        Record a missed punch or fix an existing one. Times are UTC. Leaving the
+        status blank recomputes it from the punches; picking a status overrides.
+      </p>
+      <form method="post" action="{{ url_for('views.attendance_correct') }}" class="mt-4 space-y-4">
+        <input type="hidden" name="work_date" value="{{ work_date.isoformat() }}">
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div class="lg:col-span-2">
+            <label for="correct-employee" class="block text-xs font-medium text-slate-600">
+              Employee <span class="text-rose-500">*</span>
+            </label>
+            <select name="employee_id" id="correct-employee" x-model="record" required
+                    class="mt-1 block w-full rounded-lg border-0 py-2 pl-3 pr-9 text-sm shadow-sm ring-1 ring-inset ring-amber-300 focus:ring-2 focus:ring-amber-500">
+              <option value="">Choose an employee&hellip;</option>
+              {% for person in correctable %}
+                <option value="{{ person.employee_id }}"
+                        data-attendance="{{ person.attendance_id or '' }}"
+                        data-tz="{{ person.tz or '' }}">
+                  {{ person.last_name }} {{ person.first_name }} ({{ person.employee_no }})
+                  {%- if person.department_code %} &middot; {{ person.department_code }}{% endif %}
+                  {%- if not person.attendance_id %} &middot; no record yet{% endif %}
+                </option>
+              {% endfor %}
+            </select>
+            <p class="mt-1 text-xs text-slate-500">
+              {{ correctable|length }} employee(s) can be corrected on this day,
+              including anyone with no record yet.
+            </p>
+          </div>
+          <div>
+            <label for="correct-in" class="block text-xs font-medium text-slate-600">Clock in</label>
+            <input type="datetime-local" name="clock_in" id="correct-in" x-model="clockIn"
+                   class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-amber-300 focus:ring-2 focus:ring-amber-500">
+          </div>
+          <div>
+            <label for="correct-out" class="block text-xs font-medium text-slate-600">Clock out</label>
+            <input type="datetime-local" name="clock_out" id="correct-out" x-model="clockOut"
+                   class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-amber-300 focus:ring-2 focus:ring-amber-500">
+          </div>
+          <div>
+            <label for="correct-status" class="block text-xs font-medium text-slate-600">Status</label>
+            <select name="status" id="correct-status" x-model="status"
+                    class="mt-1 block w-full rounded-lg border-0 py-2 pl-3 pr-9 text-sm shadow-sm ring-1 ring-inset ring-amber-300 focus:ring-2 focus:ring-amber-500">
+              <option value="">Recompute</option>
+              {% for value in ['present','late','very_late','absent','on_leave','half_day','holiday'] %}
+                <option value="{{ value }}">{{ value|replace('_',' ')|capitalize }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="min-w-[16rem] flex-1">
+            <label for="correct-notes" class="block text-xs font-medium text-slate-600">Note</label>
+            <input name="notes" id="correct-notes" x-model="note"
+                   placeholder="Reason for the correction"
+                   class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-amber-300 focus:ring-2 focus:ring-amber-500">
+          </div>
+          <button type="submit" :disabled="!record"
+                  class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 disabled:opacity-50">
+            Save correction
+          </button>
+        </div>
+      </form>
+    </div>
+  {% endif %}
+
+  <div class="grid gap-6 lg:grid-cols-4">
+    <!-- Board -->
+    <div class="lg:col-span-3">
+      <div id="attendance-board"
+           hx-get="{{ url_for('views.attendance') }}?{{ request.query_string.decode('utf-8') }}"
+           hx-trigger="{{ 'every 60s' if is_today else 'none' }}"
+           hx-swap="innerHTML">
+        {% include "attendance/_board.html" %}
+      </div>
+    </div>
+
+    <!-- Side panels -->
+    <div class="space-y-6">
+      {% include "attendance/_panels.html" %}
+      <div id="live-punches"
+           hx-get="{{ url_for('views.attendance_live') }}"
+           hx-trigger="{{ 'every 30s' if is_today else 'none' }}"
+           hx-swap="innerHTML">
+        {% include "attendance/_live.html" %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

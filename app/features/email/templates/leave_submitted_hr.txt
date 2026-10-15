@@ -1,0 +1,21 @@
+{% set subject = "Action needed: " ~ employee_name ~ " requested " ~ leave_type ~ " leave" %}
+    Hello,
+
+    {{ employee_name }} ({{ employee_no }}) has submitted a leave request that
+    needs a decision.
+
+      Reference  : #{{ request_id }}
+      Employee   : {{ employee_name }} ({{ employee_no }})
+      Department : {{ department_name }}
+      Leave type : {{ leave_type }}
+      Window     : {{ start_date }} to {{ end_date }}
+      Duration   : {{ days }} day(s)
+    {% if reason %}
+      Reason     : {{ reason }}
+    {% endif %}
+
+    Approve or deny it here: {{ link }}
+
+    --
+    Employee Management System
+    This is an automated message; please do not reply directly.

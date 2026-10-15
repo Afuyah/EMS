@@ -1,0 +1,448 @@
+{% extends "layouts/app.html" %}
+{% from "partials/_ui.html" import
+     page_header, card, kpi, badge, color_badge, progress, empty_state, stat_row %}
+
+{% block page_title %}Reports{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  {{ page_header('Reports',
+                 'Attendance, punctuality and leave, over any period you choose.',
+                 'Analytics') }}
+
+  <!-- Organisation snapshot -->
+  <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    {{ kpi('Active employees', overview.active_employees,
+           overview.departments ~ ' departments') }}
+    {{ kpi('Leave awaiting HR', overview.pending_leave,
+           overview.awaiting_employee ~ ' awaiting employee',
+           'amber' if overview.pending_leave else 'slate') }}
+    {{ kpi('Devices online', overview.active_devices, 'punch clocks active',
+           'emerald' if overview.active_devices else 'slate') }}
+    {{ kpi('Disciplinary actions', overview.disciplinary_actions, 'on record',
+           'rose' if overview.disciplinary_actions else 'slate') }}
+  </div>
+
+  <!-- Report chooser -->
+  <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-900/5">
+    <div class="flex flex-wrap gap-2">
+      {% for key, label, description in tabs %}
+        <a href="{{ url_for('views.reports', tab=key, start=start.isoformat(), end=end.isoformat(), year=year, department_id=department_id or none) }}"
+           title="{{ description }}"
+           class="rounded-lg px-3.5 py-2 text-sm font-semibold shadow-sm ring-1 ring-inset transition
+                  {{ 'bg-brand-600 text-white ring-brand-600' if tab == key else 'bg-white text-slate-600 ring-slate-300 hover:bg-slate-50' }}">
+          {{ label }}
+        </a>
+      {% endfor %}
+    </div>
+    <p class="mt-3 text-xs text-slate-500">
+      {{ (tabs|selectattr('0', 'equalto', tab)|first)[2] }}
+    </p>
+  </div>
+
+  <!-- Filters -->
+  <form method="get" class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-900/5">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div>
+        <label for="rep-start" class="block text-xs font-medium text-slate-600">From</label>
+        <input type="date" id="rep-start" name="start" value="{{ start.isoformat() }}"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      </div>
+      <div>
+        <label for="rep-end" class="block text-xs font-medium text-slate-600">To</label>
+        <input type="date" id="rep-end" name="end" value="{{ end.isoformat() }}"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      </div>
+      <div>
+        <label for="rep-dept" class="block text-xs font-medium text-slate-600">Department</label>
+        <select id="rep-dept" name="department_id"
+                class="mt-1 block w-full rounded-lg border-0 py-2 pl-3 pr-9 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+          <option value="">All departments</option>
+          {% for department in departments %}
+            <option value="{{ department.id }}" {{ 'selected' if department_id == department.id }}>
+              {{ department.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="rep-year" class="block text-xs font-medium text-slate-600">Year (leave)</label>
+        <input type="number" id="rep-year" name="year" value="{{ year }}"
+               min="2000" max="2100"
+               class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      </div>
+      <div class="flex items-end gap-2">
+        <button type="submit"
+                class="flex-1 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500">
+          Apply
+        </button>
+        <a href="{{ url_for('views.reports', tab=tab) }}"
+           class="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+          Reset
+        </a>
+      </div>
+    </div>
+
+    <!-- Export for the active report -->
+    <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+      <span class="text-xs font-medium text-slate-500">Download:</span>
+      {% set export_map = {
+        'attendance': '/api/v1/exports/attendance/summary.csv',
+        'colors': '/api/v1/exports/attendance/colors.csv',
+        'headcount': '/api/v1/exports/attendance/headcount.csv',
+        'late': '/api/v1/exports/attendance/top_late.csv',
+        'leave': '/api/v1/exports/leave/utilization.csv',
+      } %}
+      {% if tab in export_map %}
+        <a href="{{ export_map[tab] }}?start={{ start.isoformat() }}&end={{ end.isoformat() }}&year={{ year }}{% if department_id %}&department_id={{ department_id }}{% endif %}"
+           class="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+          <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+          {{ (tabs|selectattr('0', 'equalto', tab)|first)[1] }} as CSV
+        </a>
+      {% elif tab == 'ledger' and selected_department %}
+        <a href="/api/v1/exports/leave/balances/{{ selected_department.id }}.csv?year={{ year }}"
+           class="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+          <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+          {{ selected_department.name }} balances as CSV
+        </a>
+      {% endif %}
+      <a href="/api/v1/exports/leave/balances/template.csv"
+         class="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700">
+        Balance import template
+      </a>
+    </div>
+  </form>
+
+  {# ============================ ATTENDANCE ============================ #}
+  {% if tab == 'attendance' %}
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {{ kpi('Employees', summary.totals.employees, 'in scope') }}
+      {{ kpi('Days recorded', summary.totals.records,
+             '%.1fh worked'|format(summary.totals.worked_minutes / 60)) }}
+      {{ kpi('Late days', summary.totals.late_days, 'arrivals past grace',
+             'amber' if summary.totals.late_days else 'slate') }}
+      {{ kpi('Absent days', summary.totals.absent_days, 'no punch recorded',
+             'rose' if summary.totals.absent_days else 'slate') }}
+    </div>
+
+    {% call card('Attendance by department',
+                 start.strftime('%d %b %Y') ~ ' to ' ~ end.strftime('%d %b %Y')) %}
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="pb-2 pr-4 text-left font-semibold">Department</th>
+              <th class="pb-2 pr-4 text-right font-semibold">People</th>
+              <th class="pb-2 pr-4 text-right font-semibold">Records</th>
+              <th class="pb-2 pr-4 text-right font-semibold">Late</th>
+              <th class="pb-2 pr-4 text-right font-semibold">Absent</th>
+              <th class="pb-2 pr-4 text-right font-semibold">On leave</th>
+              <th class="pb-2 pr-4 text-right font-semibold">Worked</th>
+              <th class="pb-2 text-right font-semibold">Avg / day</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for row in summary.rows %}
+              <tr class="transition hover:bg-slate-50/60">
+                <td class="py-2.5 pr-4">
+                  <span class="font-medium text-slate-900">{{ row.department_name or 'Unassigned' }}</span>
+                  {% if row.department_code %}
+                    <span class="ml-1 text-xs text-slate-400">{{ row.department_code }}</span>
+                  {% endif %}
+                </td>
+                <td class="py-2.5 pr-4 text-right text-slate-600">{{ row.employees }}</td>
+                <td class="py-2.5 pr-4 text-right text-slate-600">{{ row.records }}</td>
+                <td class="py-2.5 pr-4 text-right">
+                  {% if row.late_days %}<span class="font-medium text-amber-600">{{ row.late_days }}</span>
+                  {% else %}<span class="text-slate-300">—</span>{% endif %}
+                </td>
+                <td class="py-2.5 pr-4 text-right">
+                  {% if row.absent_days %}<span class="font-medium text-rose-600">{{ row.absent_days }}</span>
+                  {% else %}<span class="text-slate-300">—</span>{% endif %}
+                </td>
+                <td class="py-2.5 pr-4 text-right text-slate-600">{{ row.on_leave_days }}</td>
+                <td class="py-2.5 pr-4 text-right text-slate-600">
+                  {{ '%.0fh'|format((row.worked_minutes or 0) / 60) }}
+                </td>
+                <td class="py-2.5 text-right text-slate-500">
+                  {{ '%.1fh'|format((row.avg_worked_minutes or 0) / 60) }}
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="8" class="py-12 text-center text-slate-500">
+                  No attendance recorded in this period
+                  {% if selected_department %}for {{ selected_department.name }}{% endif %}.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          {% if summary.rows %}
+            <tfoot class="border-t border-slate-200 text-sm font-semibold text-slate-800">
+              <tr>
+                <td class="pt-2.5 pr-4">Total</td>
+                <td class="pt-2.5 pr-4 text-right">{{ summary.totals.employees }}</td>
+                <td class="pt-2.5 pr-4 text-right">{{ summary.totals.records }}</td>
+                <td class="pt-2.5 pr-4 text-right text-amber-700">{{ summary.totals.late_days }}</td>
+                <td class="pt-2.5 pr-4 text-right text-rose-700">{{ summary.totals.absent_days }}</td>
+                <td class="pt-2.5 pr-4 text-right">{{ summary.totals.on_leave_days }}</td>
+                <td class="pt-2.5 pr-4 text-right">
+                  {{ '%.0fh'|format(summary.totals.worked_minutes / 60) }}
+                </td>
+                <td class="pt-2.5"></td>
+              </tr>
+            </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    {% endcall %}
+
+  {# ======================== ATTENDANCE HEALTH ========================= #}
+  {% elif tab == 'colors' %}
+    <div class="grid gap-6 lg:grid-cols-2">
+      {% call card('Attendance health', 'Current badge across the workforce') %}
+        <div class="space-y-4">
+          {% if colors.total %}
+            {% for row in colors.distribution %}
+              <div>
+                <div class="flex items-center justify-between text-sm">
+                  <span>{{ color_badge(row.color) }}</span>
+                  <span class="font-semibold text-slate-800">
+                    {{ row.total }}
+                    <span class="text-xs font-normal text-slate-400">{{ row.percent }}%</span>
+                  </span>
+                </div>
+                <div class="mt-1.5">{{ progress(row.total, colors.total, row.color|replace('green','emerald')|replace('yellow','amber')|replace('orange','orange')|replace('red','rose')) }}</div>
+              </div>
+            {% endfor %}
+            <p class="border-t border-slate-100 pt-3 text-xs text-slate-500">
+              {{ colors.total }} employee(s) measured{{ ' in ' ~ selected_department.name if selected_department else ' across all departments' }}.
+            </p>
+          {% else %}
+            {{ empty_state('No employees to measure',
+                           'There are no active employees in this scope.') }}
+          {% endif %}
+        </div>
+      {% endcall %}
+
+      {% call card('How the badge is decided', 'Configured colour ladder') %}
+        <p class="text-sm text-slate-600">
+          A rule matches when <em>both</em> its late and absence thresholds are
+          reached. The most severe match wins, and the ladder is applied nightly.
+        </p>
+        <div class="mt-4">
+          <a href="{{ url_for('views.rules') }}"
+             class="inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-brand-700 shadow-sm ring-1 ring-inset ring-brand-300 hover:bg-brand-50">
+            Open the ladder rules
+          </a>
+        </div>
+      {% endcall %}
+    </div>
+
+  {# ============================ HEADCOUNT ============================= #}
+  {% elif tab == 'headcount' %}
+    {% set peak = headcount|map(attribute='clocked_in')|max if headcount else 1 %}
+    {% call card('Daily headcount', 'Employees on the books, clocked in, and on leave') %}
+      {% if headcount %}
+        <div class="mb-5 flex items-end gap-3">
+          {{ progress(
+               (headcount|map(attribute='clocked_in')|sum) / (headcount|length),
+               headcount[0].headcount,
+               'brand') }}
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead class="text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="pb-2 pr-4 text-left font-semibold">Date</th>
+                <th class="pb-2 pr-4 text-right font-semibold">Headcount</th>
+                <th class="pb-2 pr-4 text-right font-semibold">Clocked in</th>
+                <th class="pb-2 pr-4 text-right font-semibold">On leave</th>
+                <th class="pb-2 text-left font-semibold">Attendance</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for row in headcount %}
+                <tr class="transition hover:bg-slate-50/60">
+                  <td class="py-2 pr-4 text-slate-700">
+                    {{ row.work_date if row.work_date is string else row.work_date.strftime('%a %d %b %Y') }}
+                  </td>
+                  <td class="py-2 pr-4 text-right text-slate-600">{{ row.headcount }}</td>
+                  <td class="py-2 pr-4 text-right font-medium text-emerald-700">{{ row.clocked_in }}</td>
+                  <td class="py-2 pr-4 text-right text-sky-700">{{ row.on_leave }}</td>
+                  <td class="py-2 w-40">
+                    {{ progress(row.clocked_in, row.headcount or 1, 'emerald') }}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        {{ empty_state('No headcount data',
+                       'No attendance was recorded in this period.') }}
+      {% endif %}
+    {% endcall %}
+
+  {# ============================== LATE ================================ #}
+  {% elif tab == 'late' %}
+    {% call card('Most late arrivals', 'Ranked by late days, then total minutes') %}
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="pb-2 pr-4 text-left font-semibold">#</th>
+              <th class="pb-2 pr-4 text-left font-semibold">Employee</th>
+              <th class="pb-2 pr-4 text-left font-semibold">Department</th>
+              <th class="pb-2 pr-4 text-right font-semibold">Late days</th>
+              <th class="pb-2 pr-4 text-right font-semibold">Total minutes</th>
+              <th class="pb-2 text-right font-semibold">Average</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for row in top_late %}
+              <tr class="transition hover:bg-slate-50/60">
+                <td class="py-2.5 pr-4 text-slate-400">{{ loop.index }}</td>
+                <td class="py-2.5 pr-4">
+                  <a href="{{ url_for('views.employee_detail', employee_id=row.employee_id) }}"
+                     class="font-medium text-slate-900 hover:text-brand-600">
+                    {{ row.first_name }} {{ row.last_name }}
+                  </a>
+                  <span class="ml-1 text-xs text-slate-400">{{ row.employee_no }}</span>
+                </td>
+                <td class="py-2.5 pr-4 text-slate-600">{{ row.department_name or '—' }}</td>
+                <td class="py-2.5 pr-4 text-right font-semibold text-amber-600">{{ row.late_days }}</td>
+                <td class="py-2.5 pr-4 text-right text-slate-600">{{ row.late_minutes }}</td>
+                <td class="py-2.5 text-right text-slate-500">
+                  {{ '%.0f'|format(row.avg_late_minutes or 0) }} min
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="6" class="py-12 text-center">
+                  <p class="text-sm font-medium text-slate-700">No late arrivals</p>
+                  <p class="mt-1 text-xs text-slate-500">
+                    Nobody was late in this period{{ ' for ' ~ selected_department.name if selected_department else '' }}.
+                  </p>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endcall %}
+
+  {# ============================== LEAVE =============================== #}
+  {% elif tab == 'leave' %}
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {{ kpi('Entitled', utilisation.totals.entitled, 'days allocated ' ~ year) }}
+      {{ kpi('Taken', utilisation.totals.used, 'days approved', 'emerald') }}
+      {{ kpi('Reserved', utilisation.totals.pending,
+             'awaiting approval', 'amber' if utilisation.totals.pending else 'slate') }}
+      {{ kpi('Available', utilisation.totals.available, 'still bookable') }}
+    </div>
+
+    {% call card('Leave utilisation ' ~ year, 'Entitlement versus usage by type') %}
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="pb-2 pr-4 text-left font-semibold">Leave type</th>
+              <th class="pb-2 pr-4 text-right font-semibold">Employees</th>
+              <th class="pb-2 pr-4 text-right font-semibold">Entitled</th>
+              <th class="pb-2 pr-4 text-right font-semibold">Used</th>
+              <th class="pb-2 pr-4 text-right font-semibold">Pending</th>
+              <th class="pb-2 pr-4 text-right font-semibold">Available</th>
+              <th class="pb-2 text-left font-semibold">Utilisation</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for row in utilisation.rows %}
+              <tr class="transition hover:bg-slate-50/60">
+                <td class="py-2.5 pr-4 font-medium text-slate-900">
+                  {{ row.leave_type|replace('_',' ')|title }}
+                </td>
+                <td class="py-2.5 pr-4 text-right text-slate-600">{{ row.employees }}</td>
+                <td class="py-2.5 pr-4 text-right text-slate-600">{{ row.entitled }}</td>
+                <td class="py-2.5 pr-4 text-right text-emerald-700">{{ row.used }}</td>
+                <td class="py-2.5 pr-4 text-right text-amber-700">{{ row.pending }}</td>
+                <td class="py-2.5 pr-4 text-right text-slate-600">{{ row.available }}</td>
+                <td class="py-2.5 w-40">
+                  <div class="flex items-center gap-2">
+                    {{ progress(row.used, row.entitled or 1,
+                                'rose' if (row.utilisation_percent or 0) >= 90 else 'brand') }}
+                    <span class="shrink-0 text-xs text-slate-500">{{ row.utilisation_percent }}%</span>
+                  </div>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="7" class="py-12 text-center text-slate-500">
+                  No leave balances allocated for {{ year }}
+                  {% if selected_department %}in {{ selected_department.name }}{% endif %}.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endcall %}
+
+  {# ============================== LEDGER ============================== #}
+  {% elif tab == 'ledger' %}
+    {% if not selected_department %}
+      {{ empty_state('Choose a department',
+                     'The balance ledger is per department. Pick one from the filter above, or use the department buttons to narrow the report.',
+                     'Go to employees', url_for('views.employees')) }}
+    {% else %}
+      {% call card('Balance ledger — ' ~ selected_department.name,
+                   'Every employee and leave type for ' ~ year) %}
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead class="text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="pb-2 pr-4 text-left font-semibold">Employee</th>
+                <th class="pb-2 pr-4 text-left font-semibold">Leave type</th>
+                <th class="pb-2 pr-4 text-right font-semibold">Entitled</th>
+                <th class="pb-2 pr-4 text-right font-semibold">Used</th>
+                <th class="pb-2 pr-4 text-right font-semibold">Pending</th>
+                <th class="pb-2 text-right font-semibold">Available</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for row in ledger.rows %}
+                <tr class="transition hover:bg-slate-50/60">
+                  <td class="py-2.5 pr-4">
+                    <a href="{{ url_for('views.employee_detail', employee_id=row.employee_id) }}"
+                       class="font-medium text-slate-900 hover:text-brand-600">
+                      {{ row.last_name }} {{ row.first_name }}
+                    </a>
+                    <span class="ml-1 text-xs text-slate-400">{{ row.employee_no }}</span>
+                  </td>
+                  <td class="py-2.5 pr-4 text-slate-600">{{ row.leave_type|replace('_',' ')|title }}</td>
+                  <td class="py-2.5 pr-4 text-right text-slate-600">{{ row.entitled }}</td>
+                  <td class="py-2.5 pr-4 text-right text-emerald-700">{{ row.used }}</td>
+                  <td class="py-2.5 pr-4 text-right text-amber-700">{{ row.pending }}</td>
+                  <td class="py-2.5 text-right font-semibold text-slate-800">{{ row.available }}</td>
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="6" class="py-12 text-center text-slate-500">
+                    No balances allocated for this department in {{ year }}.
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endcall %}
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

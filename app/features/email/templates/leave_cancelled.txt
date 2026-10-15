@@ -1,0 +1,19 @@
+{% set subject = "Cancelled: your " ~ leave_type ~ " leave request" %}
+    Hello {{ employee_name }},
+
+    Your {{ leave_type }} leave request has been CANCELLED.
+
+      Reference : #{{ request_id }}
+      Window    : {{ start_date }} to {{ end_date }}
+      Duration  : {{ days }} day(s)
+    {% if note %}
+      Note      : {{ note }}
+    {% endif %}
+
+    Any reserved days have been returned to your balance.
+
+    View your balance here: {{ link }}
+
+    --
+    Employee Management System
+    This is an automated message; please do not reply directly.

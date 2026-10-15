@@ -1,0 +1,106 @@
+{% extends "layouts/app.html" %}
+{% from "partials/_ui.html" import page_header, card, avatar, badge, empty_state %}
+
+{% block page_title %}Record employee gender{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  {{ page_header('Record employee gender',
+                 'Gender decides whether maternity or paternity leave applies, so neither can be requested until it is recorded.',
+                 'Employees') }}
+
+  {% if waiting %}
+    <div class="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/>
+          </svg>
+        </span>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-amber-900">
+            {{ waiting|length }} of {{ total_employees }} employee(s) still need a gender
+          </p>
+          <p class="mt-0.5 text-xs text-amber-800">
+            Until it is set they can request annual, sick and unpaid leave normally,
+            but <strong>neither maternity nor paternity</strong>.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <form method="post" action="{{ url_for('views.employees_gender_save') }}">
+      {% call card('Choose a gender for each employee') %}
+        <div class="divide-y divide-slate-100">
+          {% for employee in waiting %}
+            <div class="flex flex-wrap items-center justify-between gap-4 py-3">
+              <div class="flex min-w-0 items-center gap-3">
+                {{ avatar(employee.first_name, employee.last_name, employee.current_color, 'h-9 w-9') }}
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-medium text-slate-900">{{ employee.full_name }}</p>
+                  <p class="text-xs text-slate-500">
+                    {{ employee.employee_no }}
+                    {% if employee.department %}
+                      <span class="text-slate-300">&middot;</span> {{ employee.department.name }}
+                    {% endif %}
+                    {% if employee.position %}
+                      <span class="text-slate-300">&middot;</span> {{ employee.position.title }}
+                    {% endif %}
+                  </p>
+                </div>
+              </div>
+
+              <div class="flex shrink-0 gap-2">
+                {% for value, label in [('female', 'Female'), ('male', 'Male')] %}
+                  <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-slate-700 shadow-sm transition hover:bg-slate-50 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50 has-[:checked]:text-brand-900">
+                    <input type="radio" name="gender_{{ employee.id }}" value="{{ value }}"
+                           class="h-4 w-4 border-slate-300 text-brand-600 focus:ring-brand-600">
+                    {{ label }}
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+          <p class="text-xs text-slate-500">
+            You can save in batches &mdash; anything left blank is simply skipped and
+            stays on this list.
+          </p>
+          <button type="submit"
+                  class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500">
+            Save recorded genders
+          </button>
+        </div>
+      {% endcall %}
+    </form>
+  {% else %}
+    {{ empty_state('Every employee has a gender recorded',
+                   'Maternity and paternity leave are correctly decided for everyone. Nothing to do here.',
+                   'Back to employees', url_for('views.employees')) }}
+  {% endif %}
+
+  {% call card('How this is used') %}
+    <ul class="ml-4 list-disc space-y-2 text-sm text-slate-600">
+      <li>
+        A <strong>female</strong> employee can request <strong>maternity</strong> leave
+        and is not offered paternity.
+      </li>
+      <li>
+        A <strong>male</strong> employee can request <strong>paternity</strong> leave
+        and is not offered maternity.
+      </li>
+      <li>
+        The rule is enforced when the request is submitted and again on approval, not
+        just hidden in the form.
+      </li>
+      <li>
+        When an employee signs in, the request form only offers the leave types that
+        apply to them, and explains anything that is missing.
+      </li>
+    </ul>
+  {% endcall %}
+</div>
+{% endblock %}

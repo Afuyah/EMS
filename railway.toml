@@ -1,0 +1,29 @@
+# Railway service configuration.
+#
+# Three services run this same image with different start commands:
+#
+#   web     -> startCommand = "/app/docker-entrypoint.sh web"
+#   worker  -> startCommand = "/app/docker-entrypoint.sh worker"
+#   beat    -> startCommand = "/app/docker-entrypoint.sh beat"   (exactly 1 replica)
+#
+# Migrations are wired to preDeployCommand so they run once per deploy, before
+# the new container takes traffic. Doing it in the start command instead would
+# run them in every replica at once.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "/app/docker-entrypoint.sh web"
+# Must match the app's health route. A failing healthcheck stops the rollout
+# instead of sending traffic to a broken release.
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+preDeployCommand = "/app/docker-entrypoint.sh release"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+[deploy.resources]
+# The web service is light; scale here rather than raising the plan.
+replicas = 1

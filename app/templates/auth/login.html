@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+
+{% block body %}
+<div class="relative flex min-h-full flex-col justify-center overflow-hidden bg-slate-900 px-4 py-12 sm:px-6 lg:px-8">
+
+  <!-- Ambient background -->
+  <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+    <div class="absolute -left-40 -top-40 h-[32rem] w-[32rem] rounded-full bg-brand-600/25 blur-3xl"></div>
+    <div class="absolute -bottom-52 -right-32 h-[36rem] w-[36rem] rounded-full bg-indigo-500/20 blur-3xl"></div>
+    <div class="absolute inset-0 opacity-[0.06]"
+         style="background-image: radial-gradient(circle at 1px 1px, white 1px, transparent 0); background-size: 28px 28px;"></div>
+  </div>
+
+  <div class="relative mx-auto w-full max-w-md">
+    <div class="mb-8 text-center">
+      <span class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-600 text-lg font-bold text-white shadow-lg shadow-brand-600/30 ring-1 ring-white/20">
+        EMS
+      </span>
+      <h1 class="mt-5 text-2xl font-bold tracking-tight text-white">Sign in to your account</h1>
+      <p class="mt-1.5 text-sm text-slate-400">Employee Management System</p>
+    </div>
+
+    <div class="rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-white/10 sm:p-8">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="mb-5 space-y-2">
+            {% for category, message in messages %}
+              <div class="rounded-xl px-3.5 py-2.5 text-sm ring-1 ring-inset
+                          {{ 'bg-rose-50 text-rose-800 ring-rose-600/20' if category == 'error'
+                             else 'bg-sky-50 text-sky-800 ring-sky-600/20' if category == 'info'
+                             else 'bg-emerald-50 text-emerald-800 ring-emerald-600/20' }}">
+                {{ message }}
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <form method="post" action="{{ url_for('views.login') }}" class="space-y-5">
+        {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+
+        <div>
+          <label for="email" class="block text-sm font-medium text-slate-700">
+            Email address <span class="text-rose-500">*</span>
+          </label>
+          <input id="email" name="email" type="email" required autofocus
+                 autocomplete="email" value="{{ email or '' }}" placeholder="you@company.com"
+                 class="mt-1.5 block w-full rounded-lg border-0 bg-white py-2 px-3 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-brand-600">
+        </div>
+
+        <div x-data="{ show: false }">
+          <label for="password" class="block text-sm font-medium text-slate-700">
+            Password <span class="text-rose-500">*</span>
+          </label>
+          <div class="relative mt-1.5">
+            <input id="password" name="password" :type="show ? 'text' : 'password'" required
+                   autocomplete="current-password"
+                   class="block w-full rounded-lg border-0 bg-white py-2 pl-3 pr-11 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-brand-600">
+            <button type="button" @click="show = !show"
+                    class="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-600"
+                    :aria-label="show ? 'Hide password' : 'Show password'">
+              <svg x-show="!show" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+              <svg x-show="show" x-cloak class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18M10.6 10.6a3 3 0 004.2 4.2M6.7 6.7C4.3 8.2 2.5 12 2.5 12s3.5 6.5 9.5 6.5c1.6 0 3-.4 4.2-1M21.5 12s-1-1.9-2.9-3.5"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit"
+                class="flex w-full items-center justify-center rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600">
+          Sign in
+        </button>
+      </form>
+    </div>
+
+    <p class="mt-6 text-center text-xs text-slate-500">
+      Protected by JWT session cookies. Contact HR if you cannot access your account.
+    </p>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% from "partials/_macros.html" import leave_status_badge %}
+{% if error %}
+  <div class="rounded-xl bg-rose-50 p-4 ring-1 ring-inset ring-rose-600/20">
+    <p class="text-sm font-medium text-rose-800">{{ error }}</p>
+  </div>
+{% else %}
+  <div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-inset ring-slate-200">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <p class="text-sm font-medium text-slate-900">
+          {{ request.leave_type|replace('_',' ')|title }} · {{ request.days }} day(s)
+        </p>
+        <p class="text-xs text-slate-500">
+          {{ request.start_date.strftime('%a %d %b %Y') }} – {{ request.end_date.strftime('%a %d %b %Y') }}
+        </p>
+        {% if request.status == 'approved_forced' %}
+          <p class="mt-1 text-xs font-medium text-indigo-700">
+            Your one decline has been used, so this window is confirmed.
+          </p>
+        {% elif request.status == 'denied' %}
+          <p class="mt-1 text-xs font-medium text-slate-600">
+            Declined. A new window has been suggested below.
+          </p>
+        {% endif %}
+      </div>
+      {{ leave_status_badge(request.status) }}
+    </div>
+  </div>
+{% endif %}

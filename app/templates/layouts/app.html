@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1d4ed8">
+  <title>{% block title %}{{ active_nav or 'Dashboard' }}{% endblock %} · EMS</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif']
+          },
+          colors: {
+            brand: {
+              50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd',
+              400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8',
+              800: '#1e40af', 900: '#1e3a8a'
+            }
+          },
+          boxShadow: { card: '0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06)' }
+        }
+      }
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="h-full font-sans text-slate-800 antialiased"
+      hx-headers='{"X-CSRF-TOKEN": "{{ csrf_token or '' }}"}'
+      x-data="{ mobileNav: false }"
+      @keydown.escape.window="mobileNav = false">
+
+  {% set role = current_user.role if current_user else 'EMPLOYEE' %}
+  {% set nav_items = [
+    ('views.dashboard', 'Dashboard', 'M3 12l9-9 9 9M5 10v10h14V10', ['EMPLOYEE','MANAGER','HR','ADMIN']),
+    ('views.attendance', 'Attendance', 'M12 8v4l3 2M12 3a9 9 0 100 18 9 9 0 000-18', ['EMPLOYEE','MANAGER','HR','ADMIN']),
+    ('views.leave', 'My leave', 'M8 7V3m8 4V3M3 11h18M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2', ['EMPLOYEE','MANAGER','HR','ADMIN']),
+    ('views.leave_admin', 'Leave queue', 'M9 12l2 2 4-4M12 3l9 4v6c0 5-4 8-9 9-5-1-9-4-9-9V7z', ['HR','ADMIN']),
+    ('views.leave_plan', 'Annual plan', 'M8 7V3m8 4V3M3 11h18M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2', ['HR','ADMIN','MANAGER']),
+    ('views.attendance_policies', 'Shift & lateness', 'M12 8v4l3 2M12 3a9 9 0 100 18 9 9 0 000-18', ['HR','ADMIN']),
+    ('views.employees', 'Employees', 'M16 14a4 4 0 10-8 0M12 10a3 3 0 100-6 3 3 0 000 6M4 20a8 8 0 0116 0', ['MANAGER','HR','ADMIN']),
+    ('views.departments', 'Departments', 'M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6', ['HR','ADMIN']),
+    ('views.rules', 'Attendance rules', 'M12 3v18M7 7h7a2.5 2.5 0 010 5H7m0 0h8a2.5 2.5 0 010 5H7', ['HR','ADMIN']),
+    ('views.reports', 'Reports', 'M4 19V5m5 14V9m5 10V3m5 16v-8', ['MANAGER','HR','ADMIN']),
+    ('views.devices', 'Devices', 'M9 3v2m6-2v2M5 7h14v12H5zM9 11h6', ['ADMIN']),
+  ] %}
+
+  <!-- ============================ SIDEBAR ============================ -->
+  <!-- Desktop: fixed rail. Mobile: slide-over drawer driven by Alpine. -->
+  <div x-show="mobileNav" x-cloak x-transition.opacity
+       @click="mobileNav = false"
+       class="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm lg:hidden"></div>
+
+  <aside x-show="mobileNav" x-cloak
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="-translate-x-full"
+         x-transition:enter-end="translate-x-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="translate-x-0"
+         x-transition:leave-end="-translate-x-full"
+         class="fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-slate-200 bg-white lg:hidden">
+    <div class="flex h-16 items-center justify-between border-b border-slate-200 px-5">
+      <a href="{{ url_for('views.dashboard') }}" class="flex items-center gap-2.5">
+        <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-sm font-bold text-white">EMS</span>
+        <span class="text-sm font-semibold text-slate-900">Employee Mgmt</span>
+      </a>
+      <button @click="mobileNav = false" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100" aria-label="Close navigation">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          <path stroke-linecap="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <nav class="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      {% for endpoint, label, icon, roles in nav_items %}
+        {% if role in roles %}
+          <a href="{{ url_for(endpoint) }}"
+             class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition
+                    {{ 'bg-brand-50 text-brand-700' if active_nav == label else 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}">
+            <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="{{ icon }}"/>
+            </svg>
+            {{ label }}
+          </a>
+        {% endif %}
+      {% endfor %}
+    </nav>
+    <div class="border-t border-slate-200 p-3">
+      <a href="{{ url_for('views.logout') }}"
+         class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-rose-600 hover:bg-rose-50">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+        </svg>
+        Sign out
+      </a>
+    </div>
+  </aside>
+
+  <!-- Desktop rail -->
+  <aside class="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white lg:flex">
+    <div class="flex h-16 items-center gap-2.5 border-b border-slate-200 px-5">
+      <a href="{{ url_for('views.dashboard') }}" class="flex items-center gap-2.5">
+        <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-sm font-bold text-white shadow-sm">EMS</span>
+        <span class="text-sm font-semibold text-slate-900">Employee Mgmt</span>
+      </a>
+    </div>
+
+    <nav class="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      {% for endpoint, label, icon, roles in nav_items %}
+        {% if role in roles %}
+          <a href="{{ url_for(endpoint) }}"
+             class="group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition
+                    {{ 'bg-brand-50 text-brand-700' if active_nav == label else 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}">
+            <svg class="h-5 w-5 shrink-0 {{ 'text-brand-600' if active_nav == label else 'text-slate-400 group-hover:text-slate-500' }}"
+                 fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="{{ icon }}"/>
+            </svg>
+            {{ label }}
+          </a>
+        {% endif %}
+      {% endfor %}
+    </nav>
+
+    <div class="space-y-1 border-t border-slate-200 p-3">
+      <a href="{{ url_for('docs.swagger_ui') }}"
+         class="flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+        </svg>
+        API documentation
+      </a>
+    </div>
+  </aside>
+
+  <!-- ============================== MAIN ============================== -->
+  <div class="lg:pl-64">
+    <header class="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/85 px-4 backdrop-blur-md sm:px-6">
+      <button @click="mobileNav = true"
+              class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden" aria-label="Open navigation">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor">
+          <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+
+      <!-- The page's own heading lives in the content area, so the topbar does
+           not repeat it.  On mobile the sidebar is hidden, so this is the only
+           place the product name appears. -->
+      <div class="min-w-0 flex-1">
+        <a href="{{ url_for('views.dashboard') }}"
+           class="flex items-center gap-2 lg:hidden">
+          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-xs font-bold text-white">
+            {{ (config.APP_NAME or 'EMS')[:1]|upper }}
+          </span>
+          <span class="truncate text-sm font-semibold text-slate-900">
+            {{ config.APP_NAME or 'Employee Management System' }}
+          </span>
+        </a>
+      </div>
+
+      <div class="flex items-center gap-1.5">
+        <!-- Bell: HTMX-polled fragment -->
+        <div hx-get="{{ url_for('views.notification_bell') }}" hx-trigger="load, every 30s" hx-swap="innerHTML">
+          <span class="block h-9 w-9 animate-pulse rounded-lg bg-slate-100"></span>
+        </div>
+
+        <div x-data="{ open: false }" class="relative">
+          <button @click="open = !open" @click.outside="open = false"
+                  class="flex items-center gap-2 rounded-xl px-1.5 py-1.5 transition hover:bg-slate-100">
+            <span class="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold uppercase text-white">
+              {{ (current_user.email or 'U')[0] }}
+            </span>
+            <span class="hidden text-left sm:block">
+              <span class="block max-w-[10rem] truncate text-sm font-medium leading-tight text-slate-900">
+                {{ current_user.email.split('@')[0] if current_user else 'Guest' }}
+              </span>
+              <span class="block text-xs leading-tight text-slate-500">{{ role|capitalize }}</span>
+            </span>
+            <svg class="hidden h-4 w-4 text-slate-400 sm:block" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor">
+              <path stroke-linecap="round" d="M6 9l6 6 6-6"/>
+            </svg>
+          </button>
+
+          <div x-show="open" x-cloak x-transition.origin.top.right
+               class="absolute right-0 z-30 mt-2 w-52 overflow-hidden rounded-xl bg-white py-1 shadow-lg ring-1 ring-slate-900/5">
+            <div class="border-b border-slate-100 px-4 py-2">
+              <p class="truncate text-xs font-medium text-slate-900">{{ current_user.email if current_user else '' }}</p>
+              <p class="text-xs text-slate-500">{{ role|capitalize }}</p>
+            </div>
+            <a href="{{ url_for('views.notifications') }}" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Notifications</a>
+            <a href="{{ url_for('views.profile') }}" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">My profile</a>
+            <a href="{{ url_for('views.dashboard') }}" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Dashboard</a>
+            <a href="{{ url_for('views.logout') }}" class="block border-t border-slate-100 px-4 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50">Sign out</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:py-8">
+      {% from "partials/_ui.html" import flash_messages %}
+      {{ flash_messages() }}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

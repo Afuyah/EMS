@@ -1,0 +1,33 @@
+{% extends "layouts/app.html" %}
+
+{% block page_title %}{{ 'Edit position' if mode == 'edit' else 'New position' }}{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-xl">
+  <form method="post"
+        action="{{ url_for('views.position_edit', position_id=position.id) if mode == 'edit' else url_for('views.position_new', department_id=department.id) }}"
+        class="space-y-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+
+    <div class="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 ring-1 ring-inset ring-slate-200">
+      Department: <span class="font-medium text-slate-900">{{ department.name }}</span>
+      <span class="text-slate-400">({{ department.code }})</span>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-700">Position title *</label>
+      <input name="title" required value="{{ form.title or '' }}" placeholder="Backend Engineer"
+             class="mt-1 block w-full rounded-lg border-0 py-2 px-3 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+      <p class="mt-1 text-xs text-slate-500">Titles must be unique within a department.</p>
+    </div>
+
+    <div class="flex justify-end gap-3 border-t border-slate-100 pt-4">
+      <a href="{{ url_for('views.departments') }}"
+         class="rounded-lg px-4 py-2 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50">Cancel</a>
+      <button type="submit"
+              class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-500">
+        {{ 'Save changes' if mode == 'edit' else 'Create position' }}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

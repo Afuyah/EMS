@@ -1,0 +1,20 @@
+{% set subject = "Declined: your " ~ leave_type ~ " leave request" %}
+    Hello {{ employee_name }},
+
+    Your {{ leave_type }} leave request has been DECLINED.
+
+      Reference : #{{ request_id }}
+      Window    : {{ start_date }} to {{ end_date }}
+      Duration  : {{ days }} day(s)
+    {% if decided_by %}
+      Decided by: {{ decided_by }}
+    {% endif %}
+    {% if note %}
+      Reason    : {{ note }}
+    {% endif %}
+
+    You can request a different window here: {{ link }}
+
+    --
+    Employee Management System
+    This is an automated message; please do not reply directly.

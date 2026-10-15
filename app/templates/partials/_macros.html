@@ -1,0 +1,106 @@
+{% macro color_badge(color) -%}
+{%- set styles = {
+  'green': 'bg-emerald-100 text-emerald-700 ring-emerald-600/20',
+  'yellow': 'bg-amber-100 text-amber-700 ring-amber-600/20',
+  'orange': 'bg-orange-100 text-orange-700 ring-orange-600/20',
+  'red': 'bg-rose-100 text-rose-700 ring-rose-600/20'
+} -%}
+<span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset {{ styles.get(color, 'bg-slate-100 text-slate-600 ring-slate-500/20') }}">
+  <span class="h-1.5 w-1.5 rounded-full
+    {{ 'bg-emerald-500' if color == 'green' else 'bg-amber-500' if color == 'yellow' else 'bg-orange-500' if color == 'orange' else 'bg-rose-500' }}"></span>
+  {{ color|capitalize }}
+</span>
+{%- endmacro %}
+
+{% macro status_badge(status) -%}
+{%- set styles = {
+  'present': 'bg-emerald-100 text-emerald-700 ring-emerald-600/20',
+  'late': 'bg-amber-100 text-amber-700 ring-amber-600/20',
+  'absent': 'bg-rose-100 text-rose-700 ring-rose-600/20',
+  'on_leave': 'bg-sky-100 text-sky-700 ring-sky-600/20',
+  'holiday': 'bg-slate-100 text-slate-600 ring-slate-500/20',
+  'half_day': 'bg-violet-100 text-violet-700 ring-violet-600/20'
+} -%}
+<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset {{ styles.get(status, 'bg-slate-100 text-slate-600 ring-slate-500/20') }}">
+  {{ status|replace('_', ' ')|capitalize }}
+</span>
+{%- endmacro %}
+
+{% macro leave_status_badge(status) -%}
+{%- set styles = {
+  'suggested': 'bg-indigo-100 text-indigo-700 ring-indigo-600/20',
+  'pending': 'bg-amber-100 text-amber-700 ring-amber-600/20',
+  'approved': 'bg-emerald-100 text-emerald-700 ring-emerald-600/20',
+  'approved_forced': 'bg-emerald-100 text-emerald-700 ring-emerald-600/20',
+  'denied': 'bg-rose-100 text-rose-700 ring-rose-600/20',
+  'cancelled': 'bg-slate-100 text-slate-600 ring-slate-500/20'
+} -%}
+<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset {{ styles.get(status, 'bg-slate-100 text-slate-600 ring-slate-500/20') }}">
+  {{ status|replace('_', ' ')|capitalize }}
+</span>
+{%- endmacro %}
+
+{% macro avatar(first_name, last_name, color='slate', size='h-9 w-9') -%}
+{%- set tones = {
+  'green': 'bg-emerald-500', 'yellow': 'bg-amber-500',
+  'orange': 'bg-orange-500', 'red': 'bg-rose-500', 'slate': 'bg-slate-400',
+  'brand': 'bg-brand-600'
+} -%}
+<span class="{{ size }} inline-flex shrink-0 items-center justify-center rounded-full {{ tones.get(color, 'bg-slate-400') }} text-xs font-semibold text-white">
+  {{ (first_name or '?')[0]|upper }}{{ (last_name or '')[0]|upper }}
+</span>
+{%- endmacro %}
+
+{% macro kpi(label, value, hint=None, tone='brand') -%}
+{%- set tones = {
+  'brand': 'text-brand-600', 'emerald': 'text-emerald-600',
+  'amber': 'text-amber-600', 'rose': 'text-rose-600', 'slate': 'text-slate-700'
+} -%}
+<div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+  <p class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ label }}</p>
+  <p class="mt-1 text-2xl font-bold tracking-tight {{ tones.get(tone, 'text-slate-900') }}">{{ value }}</p>
+  {% if hint %}<p class="mt-1 text-xs text-slate-500">{{ hint }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro empty_state(message, hint=None) -%}
+<div class="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-10 text-center">
+  <p class="text-sm font-medium text-slate-700">{{ message }}</p>
+  {% if hint %}<p class="mt-1 text-xs text-slate-500">{{ hint }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro flash_messages() -%}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="mb-4 space-y-2">
+      {% for category, message in messages %}
+        {% set tone = 'bg-rose-50 text-rose-700 ring-rose-600/20' if category == 'error'
+                      else 'bg-sky-50 text-sky-700 ring-sky-600/20' if category == 'info'
+                      else 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' %}
+        <div class="rounded-lg px-3 py-2 text-sm ring-1 ring-inset {{ tone }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+{%- endmacro %}
+
+{% macro bar(value, max, tone='bg-brand-500') -%}
+{%- set pct = (value / max * 100) if max else 0 -%}
+<div class="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+  <div class="h-2 rounded-full {{ tone }}" style="width: {{ [pct, 100]|min }}%"></div>
+</div>
+{%- endmacro %}
+
+{% macro trend_bars(rows, key='late', height=48) -%}
+{%- set values = rows|map(attribute=key)|list -%}
+{%- set peak = values|max if values else 0 -%}
+<div class="flex items-end gap-1" style="height: {{ height }}px">
+  {% for row in rows %}
+    {% set value = row[key] or 0 %}
+    <div class="flex-1 rounded-t bg-brand-500/80"
+         style="height: {{ ((value / peak * 100) if peak else 2)|round|int }}%"
+         title="{{ row.work_date }}: {{ value }}"></div>
+  {% endfor %}
+</div>
+{%- endmacro %}

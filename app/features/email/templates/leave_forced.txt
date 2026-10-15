@@ -1,0 +1,18 @@
+{% set subject = "Confirmed: your " ~ leave_type ~ " leave window" %}
+    Hello {{ employee_name }},
+
+    Your one decline has been used, so the current window is now CONFIRMED for
+    your {{ leave_type }} leave.
+
+      Reference : #{{ request_id }}
+      Window    : {{ start_date }} to {{ end_date }}
+      Duration  : {{ days }} day(s)
+
+    You will not be offered further alternative windows for this request. If
+    these dates are impossible, please speak to HR.
+
+    View it here: {{ link }}
+
+    --
+    Employee Management System
+    This is an automated message; please do not reply directly.

@@ -1,0 +1,20 @@
+/* Project-specific styles layered on top of Tailwind's CDN build. */
+
+[x-cloak] { display: none !important; }
+
+/* HTMX request feedback */
+.htmx-request .htmx-indicator { opacity: 1; }
+.htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
+
+/* Thin scrollbars inside data tables and side panels */
+.scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-thin::-webkit-scrollbar-thumb {
+  background-color: rgb(203 213 225);
+  border-radius: 9999px;
+}
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+/* Print: hide navigation chrome when printing reports */
+@media print {
+  .no-print { display: none !important; }
+}

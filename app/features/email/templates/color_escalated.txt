@@ -1,0 +1,24 @@
+{% set subject = "Attendance indicator: " ~ color_label %}
+    Hello {{ employee_name }},
+
+    Your attendance indicator has moved to {{ color_label }}.
+
+      Late arrivals : {{ lates }}
+      Absences      : {{ absences }}
+      Measured over : the last {{ window_days }} days
+
+    {% if color == 'red' %}
+    This is the most serious level. Repeated lateness or absence at this level
+    can trigger a disciplinary review, so please speak to your manager.
+    {% elif color == 'orange' %}
+    This is a formal warning level. Please make sure you arrive within your shift
+    grace period and keep absences to a minimum.
+    {% else %}
+    This is an early warning. Arriving on time from now will return you to green.
+    {% endif %}
+
+    Your attendance record: {{ link }}
+
+    --
+    Employee Management System
+    This is an automated message; please do not reply directly.

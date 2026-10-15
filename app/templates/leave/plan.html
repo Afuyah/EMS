@@ -1,0 +1,268 @@
+{% extends "layouts/app.html" %}
+{% from "partials/_ui.html" import kpi, avatar, badge, card, empty_state %}
+
+{% block page_title %}Annual leave plan {{ year }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="min-w-0">
+        <h1 class="text-lg font-bold text-slate-900">
+          Annual leave plan {{ year }}
+          {% if plan %}
+            {% if plan.is_published %}
+              <span class="ml-2 align-middle">{{ badge('Published', 'emerald', dot=True) }}</span>
+            {% else %}
+              <span class="ml-2 align-middle">{{ badge('Draft', 'amber', dot=True) }}</span>
+            {% endif %}
+          {% endif %}
+        </h1>
+        <p class="mt-1 max-w-3xl text-sm text-slate-500">
+          The whole year's leave, arranged so that no department has more than its
+          allowed number of people away on the same day. Publishing makes the dates
+          visible to employees.
+        </p>
+      </div>
+    </div>
+
+    <!-- Year + department switch -->
+    <div class="mt-4 flex flex-wrap items-center gap-2">
+      <div class="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+        <a href="{{ url_for('views.leave_plan', year=prev_year, department_id=selected_department or '') }}"
+           class="rounded-md px-2.5 py-1 text-sm font-semibold text-slate-600 hover:bg-white">&larr;</a>
+        <span class="px-2 text-sm font-bold text-slate-900">{{ year }}</span>
+        <a href="{{ url_for('views.leave_plan', year=next_year, department_id=selected_department or '') }}"
+           class="rounded-md px-2.5 py-1 text-sm font-semibold text-slate-600 hover:bg-white">&rarr;</a>
+      </div>
+
+      <a href="{{ url_for('views.leave_plan', year=year) }}"
+         class="rounded-lg px-3 py-1.5 text-sm font-semibold shadow-sm ring-1 ring-inset transition
+                {{ 'bg-brand-600 text-white ring-brand-600' if not selected_department else 'bg-white text-slate-600 ring-slate-300 hover:bg-slate-50' }}">
+        All departments
+      </a>
+      {% for department in departments %}
+        <a href="{{ url_for('views.leave_plan', year=year, department_id=department.id) }}"
+           class="rounded-lg px-3 py-1.5 text-sm font-semibold shadow-sm ring-1 ring-inset transition
+                  {{ 'bg-brand-600 text-white ring-brand-600' if selected_department == department.id else 'bg-white text-slate-600 ring-slate-300 hover:bg-slate-50' }}">
+          {{ department.name }}
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if is_hr %}
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {{ kpi('Placed', placed_count, 'employees with dates', 'emerald') }}
+      {{ kpi('Not placed', unplaced_count,
+             'no free window found' if unplaced_count else 'everyone has dates',
+             'amber' if unplaced_count else 'slate') }}
+      {{ kpi('Peak off per day', plan.concurrency_limit and plan.peak_concurrent or 0,
+             'limit ' ~ (plan.concurrency_limit if plan and plan.concurrency_limit else 'none'),
+             'brand') }}
+      {{ kpi('Months covered', months|selectattr('count')|list|length, 'of 12') }}
+    </div>
+  {% endif %}
+
+  {% if is_hr %}
+    {% call card('Generate or publish') %}
+      <div class="grid gap-5 lg:grid-cols-2">
+        <form method="post" action="{{ url_for('views.leave_plan_generate') }}" class="space-y-3">
+          <input type="hidden" name="year" value="{{ year }}">
+          <p class="text-sm font-medium text-slate-800">Draft a roster</p>
+          {% if selected_department %}
+            <input type="hidden" name="department_id" value="{{ selected_department }}">
+            <p class="text-xs text-slate-500">
+              Planning <strong>{{ (departments|selectattr('id','equalto',selected_department)|first).name }}</strong>
+              for {{ year }}. Places every active employee's entitlement without
+              breaking the daily limit, spreading leave across the year and
+              respecting leave that is already approved.
+            </p>
+          {% else %}
+            <div>
+              <label for="department_id" class="block text-xs font-medium text-slate-600">
+                Department to plan
+              </label>
+              <select name="department_id" id="department_id" required
+                      class="mt-1 block w-full rounded-lg border-0 py-2 pl-3 pr-9 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+                <option value="">Choose a department&hellip;</option>
+                {% for department in departments %}
+                  <option value="{{ department.id }}">{{ department.name }}</option>
+                {% endfor %}
+              </select>
+              <p class="mt-1.5 text-xs text-slate-500">
+                The daily limit applies <strong>per department</strong>, so each
+                department is planned separately. Choose one above, or use the
+                department buttons at the top of the page first.
+              </p>
+            </div>
+          {% endif %}
+          <label class="flex items-center gap-2 text-xs text-slate-600">
+            <input type="checkbox" name="overwrite" value="true"
+                   class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-600">
+            Replace an already-published roster
+          </label>
+          <button type="submit"
+                  class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500">
+            {{ 'Re-generate roster' if plan else 'Generate roster' }}
+          </button>
+        </form>
+
+        {% if plan %}
+          <div class="space-y-3 border-t border-slate-100 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+            <p class="text-sm font-medium text-slate-800">Publish</p>
+            <p class="text-xs text-slate-500">
+              {% if plan.is_published %}
+                Published {{ plan.published_at.strftime('%d %b %Y %H:%M') if plan.published_at else '' }}.
+                Employees can see their dates. Unpublish to hide them again.
+              {% else %}
+                In draft. Employees cannot see these dates yet.
+              {% endif %}
+            </p>
+            <div class="flex flex-wrap gap-2">
+              {% if plan.is_published %}
+                <form method="post" action="{{ url_for('views.leave_plan_unpublish', plan_id=plan.id) }}">
+                  <button type="submit"
+                          class="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+                    Return to draft
+                  </button>
+                </form>
+                <form method="post" action="{{ url_for('views.leave_plan_materialise', plan_id=plan.id) }}"
+                      data-confirm="Create and approve a leave request for every placed employee?">
+                  <button type="submit"
+                          class="rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500">
+                    Create the leave requests
+                  </button>
+                </form>
+              {% else %}
+                <form method="post" action="{{ url_for('views.leave_plan_publish', plan_id=plan.id) }}">
+                  <button type="submit"
+                          class="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500">
+                    Publish roster
+                  </button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    {% endcall %}
+  {% endif %}
+
+  <!-- Year at a glance -->
+  {% call card('Year at a glance', 'Everyone off, month by month') %}
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {% for month in months %}
+        <div class="rounded-xl border p-3 transition
+                    {{ 'border-brand-200 bg-brand-50/40' if month.count else 'border-slate-200' }}">
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-semibold text-slate-800">{{ month.label }}</p>
+            <span class="rounded-full px-2 py-0.5 text-xs font-bold
+                         {{ 'bg-brand-100 text-brand-800' if month.count else 'bg-slate-100 text-slate-500' }}">
+              {{ month.count }}
+            </span>
+          </div>
+          <div class="mt-2 space-y-1.5">
+            {% for row in month['items'][:5] %}
+              <div class="flex items-start gap-2">
+                <span class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full
+                             {{ 'bg-brand-500' if row.kind == 'plan' else 'bg-emerald-500' }}"></span>
+                <div class="min-w-0">
+                  <p class="truncate text-xs font-medium text-slate-700">{{ row.name }}</p>
+                  <p class="text-[10px] text-slate-400">
+                    {{ row.start_date.strftime('%d %b') }}&ndash;{{ row.end_date.strftime('%d %b') }}
+                    &middot; {{ row.days }}d
+                  </p>
+                </div>
+              </div>
+            {% endfor %}
+            {% if month['items']|length > 5 %}
+              <p class="text-[10px] font-medium text-slate-500">
+                +{{ month['items']|length - 5 }} more
+              </p>
+            {% endif %}
+            {% if not month.count %}
+              <p class="text-xs text-slate-400">No leave planned.</p>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+    <p class="mt-4 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+      <span class="inline-flex items-center gap-1.5">
+        <span class="h-1.5 w-1.5 rounded-full bg-brand-500"></span> From the plan
+      </span>
+      <span class="inline-flex items-center gap-1.5">
+        <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Separately approved
+      </span>
+    </p>
+  {% endcall %}
+
+  <!-- Roster detail -->
+  {% call card('Roster detail', 'Per employee, including anything the planner could not place' if is_hr else 'Per employee') %}
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="pb-2 pr-4 text-left font-semibold">Employee</th>
+            <th class="pb-2 pr-4 text-left font-semibold">Department</th>
+            <th class="pb-2 pr-4 text-left font-semibold">Window</th>
+            <th class="pb-2 pr-4 text-right font-semibold">Days</th>
+            <th class="pb-2 pr-4 text-left font-semibold">Status</th>
+            {% if is_hr %}<th class="pb-2 text-left font-semibold">Why</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for item in items %}
+            <tr class="transition hover:bg-slate-50/60 {{ 'opacity-60' if not item.is_placed }}">
+              <td class="py-2.5 pr-4">
+                <div class="flex items-center gap-3">
+                  {{ avatar(item.employee.first_name, item.employee.last_name,
+                            item.employee.current_color, 'h-8 w-8') }}
+                  <div class="min-w-0">
+                    <p class="truncate font-medium text-slate-900">{{ item.employee.full_name }}</p>
+                    <p class="text-xs text-slate-500">{{ item.employee.employee_no }}</p>
+                  </div>
+                </div>
+              </td>
+              <td class="py-2.5 pr-4 text-slate-600">
+                {{ item.employee.department.name if item.employee.department else '—' }}
+              </td>
+              <td class="py-2.5 pr-4 text-slate-700">{{ item.window }}</td>
+              <td class="py-2.5 pr-4 text-right text-slate-600">{{ item.days }}</td>
+              <td class="py-2.5 pr-4">
+                {% if item.request_id %}
+                  {{ badge('Request created', 'emerald', dot=True) }}
+                {% elif item.is_placed %}
+                  {{ badge('Planned', 'brand', dot=True) }}
+                {% else %}
+                  {{ badge('Not placed', 'amber', dot=True) }}
+                {% endif %}
+              </td>
+              {% if is_hr %}
+                <td class="py-2.5 text-xs text-slate-500">{{ item.rationale or '' }}</td>
+              {% endif %}
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="{{ 6 if is_hr else 5 }}" class="py-14 text-center">
+                <p class="text-sm font-medium text-slate-700">No roster yet for {{ year }}</p>
+                {% if is_hr %}
+                  <p class="mt-1 text-xs text-slate-500">
+                    Use <strong>Generate roster</strong> above to draft the year.
+                  </p>
+                {% else %}
+                  <p class="mt-1 text-xs text-slate-500">
+                    HR has not published a leave plan for this year yet.
+                  </p>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endcall %}
+</div>
+{% endblock %}

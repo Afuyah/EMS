@@ -1,0 +1,261 @@
+{% extends "layouts/app.html" %}
+{% from "partials/_ui.html" import kpi, avatar, progress, leave_status_badge, card, empty_state, stat_row %}
+
+{% block page_title %}My leave{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-slate-900">Leave {{ year }}</h1>
+      <p class="mt-1 text-sm text-slate-500">
+        {{ employee.department.name if employee.department else '—' }}
+        <span class="text-slate-300">&middot;</span>
+        {{ employee.position.title if employee.position else '—' }}
+      </p>
+    </div>
+    <a href="{{ url_for('views.leave_request_form') }}"
+       class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500">
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor">
+        <path stroke-linecap="round" d="M12 5v14M5 12h14"/>
+      </svg>
+      Request leave
+    </a>
+  </div>
+
+  {% set total_entitled = balances|sum(attribute='entitled') %}
+  {% set total_used = balances|sum(attribute='used') %}
+  {% set total_pending = balances|sum(attribute='pending') %}
+
+  <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    {{ kpi('Entitlement', total_entitled, 'days allocated this year', 'brand') }}
+    {{ kpi('Taken', total_used, 'approved days', 'emerald') }}
+    {{ kpi('Reserved', total_pending, 'awaiting approval', 'amber' if total_pending else 'slate') }}
+    {{ kpi('Available', total_entitled - total_used - total_pending, 'still bookable') }}
+  </div>
+
+  <!-- Action required -->
+  {% if pending %}
+    <div class="overflow-hidden rounded-2xl border border-indigo-200 bg-indigo-50/70">
+      <div class="border-b border-indigo-200/70 px-5 py-4">
+        <h2 class="text-sm font-semibold text-indigo-900">Your response is needed</h2>
+        <p class="mt-1 text-xs text-indigo-700">
+          Accept the suggested window, or decline <strong>once</strong> to be offered an alternative.
+          A second decline confirms the current window automatically.
+        </p>
+      </div>
+      <div class="space-y-3 p-5">
+        {% for request in pending %}
+          {% include "leave/_action_card.html" %}
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- The employee's own allocated dates from the published annual plan -->
+  {% if allocation and allocation.is_placed %}
+    <div class="overflow-hidden rounded-2xl border border-brand-200 bg-gradient-to-r from-brand-50 to-white">
+      <div class="flex flex-wrap items-center justify-between gap-4 p-5">
+        <div class="flex items-start gap-3">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M8 7V3m8 4V3M3 11h18M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2"/>
+            </svg>
+          </span>
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wider text-brand-700">
+              Your allocated leave {{ year }}
+            </p>
+            <p class="mt-1 text-lg font-bold text-slate-900">
+              {{ allocation.start_date.strftime('%a %d %b') }}
+              <span class="font-normal text-slate-300">&rarr;</span>
+              {{ allocation.end_date.strftime('%a %d %b %Y') }}
+            </p>
+            <p class="mt-0.5 text-sm text-slate-600">
+              {{ allocation.days }} day(s) planned for you by HR
+            </p>
+          </div>
+        </div>
+        {% if today >= allocation.start_date and today <= allocation.end_date %}
+          <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800 ring-1 ring-inset ring-emerald-600/20">
+            You are on leave now
+          </span>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- Who else in the department is away this year -->
+  {% if department_roster %}
+    {% call card('Your department ' ~ year,
+                 'When your colleagues are away, so you know the cover around you') %}
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="pb-2 pr-4 text-left font-semibold">Colleague</th>
+              <th class="pb-2 pr-4 text-left font-semibold">Dates</th>
+              <th class="pb-2 pr-4 text-right font-semibold">Days</th>
+              <th class="pb-2 text-right font-semibold">When</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for item in department_roster %}
+              <tr class="transition hover:bg-slate-50/60
+                         {{ 'opacity-50' if item.end_date < today else '' }}">
+                <td class="py-2.5 pr-4">
+                  <div class="flex items-center gap-3">
+                    {{ avatar(item.employee.first_name, item.employee.last_name, 'slate', 'h-8 w-8') }}
+                    <div class="min-w-0">
+                      <p class="truncate font-medium text-slate-900">{{ item.employee.full_name }}</p>
+                      <p class="text-xs text-slate-500">{{ item.employee.employee_no }}</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="py-2.5 pr-4 text-slate-700">
+                  {{ item.start_date.strftime('%a %d %b') }} &ndash; {{ item.end_date.strftime('%d %b %Y') }}
+                </td>
+                <td class="py-2.5 pr-4 text-right text-slate-600">{{ item.days }}</td>
+                <td class="py-2.5 text-right">
+                  {% if today > item.end_date %}
+                    <span class="text-xs text-slate-400">past</span>
+                  {% elif today >= item.start_date %}
+                    <span class="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 ring-1 ring-inset ring-sky-600/20">away now</span>
+                  {% else %}
+                    <span class="text-xs text-slate-500">{{ (item.start_date - today).days }} day(s)</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
+        Colleagues are planned at most one at a time, so the department always has cover.
+      </p>
+    {% endcall %}
+  {% endif %}
+
+  <!-- Balances -->
+  {% call card('Balance detail') %}
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {% for balance in balances %}
+        <div class="rounded-xl border border-slate-200 p-4 transition hover:border-brand-300 hover:shadow-sm">
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-medium text-slate-800">{{ balance.leave_type|replace('_',' ')|title }}</p>
+            <span class="text-lg font-bold text-slate-900">
+              {{ balance.available }}<span class="text-xs font-normal text-slate-400">/{{ balance.entitled }}</span>
+            </span>
+          </div>
+          <div class="mt-2.5">{{ progress(balance.used, balance.entitled) }}</div>
+          <div class="mt-2 flex justify-between text-xs text-slate-500">
+            <span>{{ balance.used }} used</span>
+            {% if balance.pending %}<span class="font-medium text-amber-600">{{ balance.pending }} reserved</span>{% endif %}
+          </div>
+        </div>
+      {% else %}
+        <p class="text-sm text-slate-500">No balances allocated for {{ year }}.</p>
+      {% endfor %}
+    </div>
+  {% endcall %}
+
+  <div class="grid gap-6 lg:grid-cols-2">
+    {% call card('Upcoming and active') %}
+      <div class="-my-1 divide-y divide-slate-100">
+        {% for request in upcoming %}
+          <div class="flex flex-wrap items-center justify-between gap-3 py-3">
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-slate-900">{{ request.leave_type|replace('_',' ')|title }}</p>
+              <p class="text-xs text-slate-500">
+                {{ request.start_date.strftime('%a %d %b') }} &ndash; {{ request.end_date.strftime('%a %d %b') }}
+                <span class="text-slate-300">&middot;</span> {{ request.days }} day(s)
+                {% if request.status == 'approved_forced' %}
+                  <span class="ml-1 font-medium text-indigo-600">confirmed</span>
+                {% endif %}
+              </p>
+            </div>
+            <div class="flex items-center gap-2">
+              {{ leave_status_badge(request.status) }}
+              <form method="post" action="{{ url_for('views.leave_cancel', request_id=request.id) }}"
+                    data-confirm="Cancel this leave request?">
+                <button type="submit" class="text-xs font-medium text-rose-600 hover:underline">Cancel</button>
+              </form>
+            </div>
+          </div>
+        {% else %}
+          <p class="py-5 text-center text-sm text-slate-500">Nothing booked.</p>
+        {% endfor %}
+      </div>
+
+      {% if awaiting_hr %}
+        <div class="mt-5 border-t border-slate-100 pt-4">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Awaiting HR</p>
+          <div class="mt-2 space-y-2">
+            {% for request in awaiting_hr %}
+              <div class="flex items-center justify-between gap-3">
+                <p class="text-sm text-slate-700">
+                  {{ request.leave_type|replace('_',' ')|title }}
+                  <span class="text-slate-300">&middot;</span>
+                  {{ request.start_date.strftime('%d %b') }}&ndash;{{ request.end_date.strftime('%d %b') }}
+                </p>
+                {{ leave_status_badge(request.status) }}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    {% endcall %}
+
+    {% call card('Colleagues away', 'Next 30 days') %}
+      <div class="-my-1 divide-y divide-slate-100">
+        {% for row in colleagues %}
+          <div class="flex items-center gap-3 py-2.5">
+            {{ avatar(row.first_name, row.last_name, 'slate', 'h-8 w-8') }}
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-medium text-slate-800">{{ row.first_name }} {{ row.last_name }}</p>
+            </div>
+            <p class="shrink-0 text-xs text-slate-500">
+              {{ row.leave_type }} &middot; {{ row.start_date.strftime('%d %b') }}&ndash;{{ row.end_date.strftime('%d %b') }}
+            </p>
+          </div>
+        {% else %}
+          <p class="py-5 text-center text-sm text-slate-500">Everyone is in.</p>
+        {% endfor %}
+      </div>
+    {% endcall %}
+  </div>
+
+  {% call card('Past and closed requests') %}
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="pb-2 pr-4 text-left font-semibold">Type</th>
+            <th class="pb-2 pr-4 text-left font-semibold">Window</th>
+            <th class="pb-2 pr-4 text-right font-semibold">Days</th>
+            <th class="pb-2 pr-4 text-right font-semibold">Denials</th>
+            <th class="pb-2 text-left font-semibold">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for request in past %}
+            <tr class="transition hover:bg-slate-50/60">
+              <td class="py-2.5 pr-4 text-slate-700">{{ request.leave_type|replace('_',' ')|title }}</td>
+              <td class="py-2.5 pr-4 text-slate-600">
+                {{ request.start_date.strftime('%d %b %Y') }} &ndash; {{ request.end_date.strftime('%d %b %Y') }}
+              </td>
+              <td class="py-2.5 pr-4 text-right text-slate-600">{{ request.days }}</td>
+              <td class="py-2.5 pr-4 text-right text-slate-600">{{ request.denial_count }}</td>
+              <td class="py-2.5">{{ leave_status_badge(request.status) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="py-10 text-center text-slate-500">No past requests.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endcall %}
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+<div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-900/5">
+  <div class="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+    <span class="inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
+    <h3 class="text-sm font-semibold text-slate-900">Live punch stream</h3>
+  </div>
+  <div class="divide-y divide-slate-100">
+    {% for punch in punches %}
+      <div class="flex items-center justify-between gap-2 px-4 py-2.5">
+        <div class="min-w-0">
+          <p class="truncate text-xs font-medium text-slate-800">
+            {{ punch.serial_no }} <span class="font-normal text-slate-400">user {{ punch.device_user_id }}</span>
+          </p>
+          <p class="text-[10px] text-slate-400">{{ punch.punch_time.strftime('%d %b %H:%M') }}</p>
+        </div>
+        <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset
+                     {{ 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' if punch.processed
+                        else 'bg-amber-50 text-amber-700 ring-amber-600/20' }}">
+          {{ 'ok' if punch.processed else 'pending' }}
+        </span>
+      </div>
+    {% else %}
+      <p class="px-4 py-6 text-center text-xs text-slate-500">No punches received yet.</p>
+    {% endfor %}
+  </div>
+</div>

@@ -1,0 +1,24 @@
+{% set subject = "Disciplinary action: " ~ action_label %}
+    Hello {{ employee_name }},
+
+    A disciplinary action has {% if applied %}been recorded{% else %}been recommended for HR review{% endif %}.
+
+    {% if applied %}  Reference  : #{{ action_id }}
+    {% endif %}  Action     : {{ action_label }}
+      Trigger    : {{ trigger_type }} reached {{ observed }} (threshold {{ threshold }})
+      Period     : this {{ period }}
+    {% if suspension_days %}
+      Suspension : {{ suspension_days }} day(s)
+    {% endif %}
+      Date       : {{ triggered_on }}
+
+    {% if applied %}
+    If you believe this is incorrect, please raise it with HR: {{ link }}
+    {% else %}
+    HR will review this recommendation before anything is recorded against you,
+    so there is no reference number yet.
+    {% endif %}
+
+    --
+    Employee Management System
+    This is an automated message; please do not reply directly.

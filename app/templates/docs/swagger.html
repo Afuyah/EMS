@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}API docs{% endblock %}
+
+{% block body %}
+<div class="mx-auto max-w-7xl px-4 py-8">
+  <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-slate-900">EMS JSON API</h1>
+      <p class="mt-1 text-sm text-slate-600">
+        OpenAPI 3.0 description of every <code class="rounded bg-slate-100 px-1">/api/v1</code> endpoint.
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{{ url_for('docs.openapi_json') }}"
+         class="rounded-lg px-4 py-2 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+        Raw openapi.json
+      </a>
+      <a href="{{ url_for('api_v1.api_root') }}"
+         class="rounded-lg px-4 py-2 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+        API root
+      </a>
+    </div>
+  </div>
+
+  <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+    <div id="swagger-ui"></div>
+  </div>
+</div>
+
+<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css">
+<script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
+<script>
+  window.addEventListener("load", function () {
+    window.ui = SwaggerUIBundle({
+      url: "{{ url_for('docs.openapi_json') }}",
+      dom_id: "#swagger-ui",
+      deepLinking: true,
+      docExpansion: "none",
+      defaultModelsExpandDepth: 0,
+      persistAuthorization: true,
+      tryItOutEnabled: true
+    });
+  });
+</script>
+{% endblock %}

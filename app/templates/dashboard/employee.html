@@ -1,0 +1,259 @@
+{% extends "layouts/app.html" %}
+{% from "partials/_ui.html" import kpi, status_badge, progress, avatar, leave_status_badge, card, empty_state, stat_row, page_header %}
+
+{% block page_title %}My dashboard{% endblock %}
+
+{% block content %}
+{% if employee is none %}
+  {{ empty_state('Your account is not linked to an employee record',
+                 'Ask HR to link your login to an employee profile before you can see attendance and leave.',
+                 'Back to sign in', url_for('views.logout')) }}
+{% else %}
+<div class="space-y-6">
+
+  {{ page_header('Hello, ' ~ employee.first_name,
+                 'Your attendance and leave at a glance.',
+                 'My dashboard') }}
+
+  <!-- Annual allocation: the dates the system has planned for this employee -->
+  {% if allocation and allocation.is_placed %}
+    <div class="overflow-hidden rounded-2xl border border-brand-200 bg-gradient-to-r from-brand-50 to-white">
+      <div class="flex flex-wrap items-center justify-between gap-4 p-5">
+        <div class="flex items-start gap-3">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.9" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M8 7V3m8 4V3M3 11h18M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2"/>
+            </svg>
+          </span>
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wider text-brand-700">
+              Your annual leave {{ allocation.start_date.year }}
+            </p>
+            <p class="mt-1 text-lg font-bold text-slate-900">
+              {{ allocation.start_date.strftime('%a %d %b') }}
+              <span class="font-normal text-slate-300">&rarr;</span>
+              {{ allocation.end_date.strftime('%a %d %b %Y') }}
+            </p>
+            <p class="mt-0.5 text-sm text-slate-600">
+              {{ allocation.days }} day(s) allocated
+              {% if allocation.employee and allocation.employee.department %}
+                <span class="text-slate-300">&middot;</span> {{ allocation.employee.department.name }}
+              {% endif %}
+            </p>
+          </div>
+        </div>
+        <div class="text-right">
+          {% if today >= allocation.start_date and today <= allocation.end_date %}
+            <span class="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800 ring-1 ring-inset ring-emerald-600/20">
+              You are on leave now
+            </span>
+          {% else %}
+            {% set weeks = ((allocation.start_date - today).days // 7) %}
+            <p class="text-2xl font-bold text-brand-600">
+              {{ 'this week' if weeks == 0 else weeks ~ ' week' ~ ('' if weeks == 1 else 's') }}
+            </p>
+            <p class="text-xs text-slate-500">until your leave starts</p>
+          {% endif %}
+        </div>
+      </div>
+      <p class="border-t border-brand-100 bg-white/60 px-5 py-2.5 text-xs text-slate-500">
+        These dates were planned so your department always has cover. Need them changed?
+        Talk to HR &mdash; a request is refused if it would leave the department short.
+      </p>
+    </div>
+  {% endif %}
+
+  <!-- Today -->
+  <div class="grid gap-4 lg:grid-cols-3">
+    <div class="lg:col-span-2">
+      {% call card() %}
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Today</p>
+            <p class="mt-1 text-lg font-bold text-slate-900">{{ today.strftime('%A, %d %B %Y') }}</p>
+            <p class="text-sm text-slate-500">
+              {{ employee.position.title if employee.position else '—' }}
+              <span class="text-slate-300">&middot;</span>
+              {{ employee.department.name if employee.department else '—' }}
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            {{ avatar(employee.first_name, employee.last_name, employee.current_color, 'h-10 w-10') }}
+            {% if today_row %}{{ status_badge(today_row.status) }}{% endif %}
+          </div>
+        </div>
+
+        <div class="mt-5 grid grid-cols-3 divide-x divide-slate-100 border-t border-slate-100 pt-4 text-center">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Clock in</p>
+            <p class="mt-1 text-xl font-bold text-slate-900">
+              {{ today_row.clock_in.strftime('%H:%M') if today_row and today_row.clock_in else '—' }}
+            </p>
+          </div>
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Clock out</p>
+            <p class="mt-1 text-xl font-bold text-slate-900">
+              {{ today_row.clock_out.strftime('%H:%M') if today_row and today_row.clock_out else '—' }}
+            </p>
+          </div>
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Worked</p>
+            <p class="mt-1 text-xl font-bold text-slate-900">
+              {{ '%.1fh'|format(today_row.worked_minutes / 60) if today_row and today_row.worked_minutes else '—' }}
+            </p>
+          </div>
+        </div>
+
+        {% if today_row and today_row.late_minutes %}
+          <p class="mt-4 rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs text-amber-800 ring-1 ring-inset ring-amber-600/20">
+            You arrived <strong>{{ today_row.late_minutes }} minutes</strong> after your shift grace period today.
+          </p>
+        {% elif today_row and today_row.clock_in %}
+          <p class="mt-4 rounded-xl bg-emerald-50 px-3.5 py-2.5 text-xs text-emerald-800 ring-1 ring-inset ring-emerald-600/20">
+            You clocked in on time today. Nice.
+          </p>
+        {% endif %}
+      {% endcall %}
+    </div>
+
+    <div class="space-y-4">
+      {{ kpi('Late streak', streak,
+             'consecutive late days' if streak else 'no late streak — keep it up',
+             'amber' if streak else 'emerald',
+             'M12 8v4l3 2M12 3a9 9 0 100 18 9 9 0 000-18') }}
+      {% call card('Year to date') %}
+        {{ stat_row('Late days', stats.late_days or 0, 'amber' if stats.late_days else 'slate') }}
+        {{ stat_row('Absences', stats.absent_days or 0, 'rose' if stats.absent_days else 'slate') }}
+        {{ stat_row('Leave days taken', stats.on_leave_days or 0, 'brand') }}
+        {{ stat_row('Average worked / day', '%.1fh'|format((stats.avg_worked_minutes or 0) / 60)) }}
+      {% endcall %}
+    </div>
+  </div>
+
+  <!-- Action required -->
+  {% if pending %}
+    <div class="overflow-hidden rounded-2xl border border-indigo-200 bg-indigo-50/70">
+      <div class="border-b border-indigo-200/70 px-5 py-4">
+        <h2 class="flex items-center gap-2 text-sm font-semibold text-indigo-900">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 3a9 9 0 100 18 9 9 0 000-18z"/>
+          </svg>
+          Your response is needed
+        </h2>
+        <p class="mt-1 text-xs text-indigo-700">
+          Accept the suggested window, or decline <strong>once</strong> to be offered an alternative.
+        </p>
+      </div>
+      <div class="space-y-3 p-5">
+        {% for request in pending %}
+          {% include "leave/_action_card.html" %}
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- Balances -->
+  {% call card('Leave balances ' ~ today.year) %}
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {% for balance in balances %}
+        <div class="rounded-xl border border-slate-200 p-4 transition hover:border-brand-300 hover:shadow-sm">
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-medium text-slate-800">{{ balance.leave_type|replace('_',' ')|title }}</p>
+            <span class="text-lg font-bold text-slate-900">
+              {{ balance.available }}<span class="text-xs font-normal text-slate-400">/{{ balance.entitled }}</span>
+            </span>
+          </div>
+          <div class="mt-2.5">{{ progress(balance.used, balance.entitled) }}</div>
+          <div class="mt-2 flex justify-between text-xs text-slate-500">
+            <span>{{ balance.used }} used</span>
+            {% if balance.pending %}<span class="font-medium text-amber-600">{{ balance.pending }} reserved</span>{% endif %}
+          </div>
+        </div>
+      {% else %}
+        <p class="text-sm text-slate-500">No balances allocated for {{ today.year }} yet.</p>
+      {% endfor %}
+    </div>
+    <div class="mt-5 border-t border-slate-100 pt-4">
+      <a href="{{ url_for('views.leave_request_form') }}"
+         class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500">
+        Request leave
+      </a>
+    </div>
+  {% endcall %}
+
+  <div class="grid gap-6 lg:grid-cols-2">
+    {% call card('Upcoming and active leave') %}
+      <div class="-my-1 divide-y divide-slate-100">
+        {% for request in upcoming %}
+          <div class="flex items-center justify-between gap-3 py-3">
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-slate-900">{{ request.leave_type|replace('_',' ')|title }}</p>
+              <p class="text-xs text-slate-500">
+                {{ request.start_date.strftime('%a %d %b') }} &ndash; {{ request.end_date.strftime('%a %d %b') }}
+                &middot; {{ request.days }} day(s)
+              </p>
+            </div>
+            {{ leave_status_badge(request.status) }}
+          </div>
+        {% else %}
+          <p class="py-4 text-center text-sm text-slate-500">Nothing booked.</p>
+        {% endfor %}
+      </div>
+    {% endcall %}
+
+    {% call card('Colleagues away', 'Next 14 days') %}
+      <div class="-my-1 divide-y divide-slate-100">
+        {% for row in colleagues %}
+          <div class="flex items-center gap-3 py-2.5">
+            {{ avatar(row.first_name, row.last_name, 'slate', 'h-8 w-8') }}
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-medium text-slate-900">{{ row.first_name }} {{ row.last_name }}</p>
+            </div>
+            <p class="shrink-0 text-xs text-slate-500">
+              {{ row.start_date.strftime('%d %b') }}&ndash;{{ row.end_date.strftime('%d %b') }}
+            </p>
+          </div>
+        {% else %}
+          <p class="py-4 text-center text-sm text-slate-500">Everyone is in.</p>
+        {% endfor %}
+      </div>
+    {% endcall %}
+  </div>
+
+  <!-- Personal history -->
+  {% call card('My attendance', 'Last 14 days') %}
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="pb-2 pr-4 text-left font-medium">Date</th>
+            <th class="pb-2 pr-4 text-left font-medium">In</th>
+            <th class="pb-2 pr-4 text-left font-medium">Out</th>
+            <th class="pb-2 pr-4 text-right font-medium">Worked</th>
+            <th class="pb-2 pr-4 text-right font-medium">Late</th>
+            <th class="pb-2 text-left font-medium">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for row in history %}
+            <tr class="transition hover:bg-slate-50/60">
+              <td class="py-2.5 pr-4 text-slate-700">{{ row.work_date.strftime('%a %d %b') }}</td>
+              <td class="py-2.5 pr-4 text-slate-600">{{ row.clock_in.strftime('%H:%M') if row.clock_in else '—' }}</td>
+              <td class="py-2.5 pr-4 text-slate-600">{{ row.clock_out.strftime('%H:%M') if row.clock_out else '—' }}</td>
+              <td class="py-2.5 pr-4 text-right text-slate-600">{{ '%.1fh'|format(row.worked_minutes / 60) if row.worked_minutes else '—' }}</td>
+              <td class="py-2.5 pr-4 text-right">
+                {% if row.late_minutes %}<span class="font-medium text-amber-600">{{ row.late_minutes }}m</span>{% else %}<span class="text-slate-300">—</span>{% endif %}
+              </td>
+              <td class="py-2.5">{{ status_badge(row.status) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="py-10 text-center text-slate-500">No attendance recorded yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endcall %}
+</div>
+{% endif %}
+{% endblock %}

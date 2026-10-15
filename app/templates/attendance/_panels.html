@@ -1,0 +1,62 @@
+{% from "partials/_ui.html" import avatar %}
+
+<!-- Late arrivals -->
+<div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-900/5">
+  <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+    <h3 class="text-sm font-semibold text-slate-900">Late today</h3>
+    <span class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">{{ late_rows|length }}</span>
+  </div>
+  <div class="divide-y divide-slate-100">
+    {% for row in late_rows %}
+      <div class="flex items-center gap-2.5 px-4 py-2.5">
+        {{ avatar(row.first_name, row.last_name, 'amber', 'h-7 w-7') }}
+        <p class="min-w-0 flex-1 truncate text-xs font-medium text-slate-800">{{ row.first_name }} {{ row.last_name }}</p>
+        <span class="text-xs font-bold text-amber-600">{{ row.late_minutes }}m</span>
+      </div>
+    {% else %}
+      <p class="px-4 py-6 text-center text-xs text-slate-500">Nobody is late.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Absent -->
+<div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-900/5">
+  <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+    <h3 class="text-sm font-semibold text-slate-900">Absent today</h3>
+    <span class="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700">{{ absent_rows|length }}</span>
+  </div>
+  <div class="divide-y divide-slate-100">
+    {% for row in absent_rows %}
+      <div class="flex items-center gap-2.5 px-4 py-2.5">
+        {{ avatar(row.first_name, row.last_name, 'rose', 'h-7 w-7') }}
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-xs font-medium text-slate-800">{{ row.first_name }} {{ row.last_name }}</p>
+          <p class="text-[10px] text-slate-400">{{ row.department_code or '—' }}</p>
+        </div>
+      </div>
+    {% else %}
+      <p class="px-4 py-6 text-center text-xs text-slate-500">Nobody is absent.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- On leave -->
+<div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-900/5">
+  <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+    <h3 class="text-sm font-semibold text-slate-900">On leave</h3>
+    <span class="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">{{ on_leave_rows|length }}</span>
+  </div>
+  <div class="divide-y divide-slate-100">
+    {% for row in on_leave_rows %}
+      <div class="flex items-center gap-2.5 px-4 py-2.5">
+        {{ avatar(row.first_name, row.last_name, 'brand', 'h-7 w-7') }}
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-xs font-medium text-slate-800">{{ row.first_name }} {{ row.last_name }}</p>
+          <p class="text-[10px] text-slate-400">{{ row.department_code or '—' }}</p>
+        </div>
+      </div>
+    {% else %}
+      <p class="px-4 py-6 text-center text-xs text-slate-500">Nobody is on leave.</p>
+    {% endfor %}
+  </div>
+</div>

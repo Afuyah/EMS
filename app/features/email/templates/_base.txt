@@ -1,0 +1,9 @@
+{{ heading }}
+{{ '-' * heading|length }}
+{% block content %}{% endblock %}
+
+{% block footer %}
+--
+Employee Management System
+This is an automated message; please do not reply directly.
+{% endblock %}

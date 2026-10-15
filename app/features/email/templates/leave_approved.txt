@@ -1,0 +1,22 @@
+{% set subject = "Approved: your " ~ leave_type ~ " leave (" ~ start_date ~ ")" %}
+    Hello {{ employee_name }},
+
+    Good news - your {{ leave_type }} leave has been APPROVED.
+
+      Reference : #{{ request_id }}
+      Window    : {{ start_date }} to {{ end_date }}
+      Duration  : {{ days }} day(s)
+    {% if decided_by %}
+      Decided by: {{ decided_by }}
+    {% endif %}
+    {% if note %}
+      Note      : {{ note }}
+    {% endif %}
+
+    Your leave balance has been updated.
+
+    View it here: {{ link }}
+
+    --
+    Employee Management System
+    This is an automated message; please do not reply directly.

@@ -1,0 +1,191 @@
+{% extends "layouts/app.html" %}
+{% from "partials/_ui.html" import card, avatar, badge, color_badge, empty_state, btn %}
+
+{% block page_title %}My profile{% endblock %}
+
+{% block content %}
+{% if employee is none %}
+  {{ empty_state('Your login is not linked to an employee record',
+                 'Ask HR to link your account to an employee profile before you can view or edit your details.',
+                 'Back to dashboard', url_for('views.dashboard')) }}
+{% else %}
+<div class="space-y-6">
+
+  <!-- Identity header -->
+  <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-4">
+        {{ avatar(employee.first_name, employee.last_name, employee.current_color, 'h-14 w-14 text-base') }}
+        <div class="min-w-0">
+          <h1 class="text-xl font-bold tracking-tight text-slate-900">{{ employee.full_name }}</h1>
+          <p class="mt-0.5 text-sm text-slate-500">
+            {{ employee.position.title if employee.position else 'No position' }}
+            <span class="text-slate-300">&middot;</span>
+            {{ employee.department.name if employee.department else 'No department' }}
+          </p>
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            {{ color_badge(employee.current_color) }}
+            <span class="rounded-lg bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+              {{ employee.employee_no }}
+            </span>
+            <span class="text-xs text-slate-500">{{ user.role|capitalize }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="text-right text-xs text-slate-500">
+        <p>Joined {{ employee.hired_at.strftime('%d %b %Y') if employee.hired_at else '—' }}</p>
+        <p class="mt-0.5">Tenure {{ employee.tenure_label() }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-3">
+    <!-- Editable details -->
+    <div class="lg:col-span-2">
+      {% call card('Your details', 'You can change your name, email and timezone') %}
+        <form method="post" action="{{ url_for('views.profile_update') }}" class="space-y-5">
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label for="first_name" class="block text-sm font-medium text-slate-700">First name</label>
+              <input id="first_name" name="first_name" required value="{{ employee.first_name }}"
+                     class="mt-1.5 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+            </div>
+            <div>
+              <label for="last_name" class="block text-sm font-medium text-slate-700">Last name</label>
+              <input id="last_name" name="last_name" required value="{{ employee.last_name }}"
+                     class="mt-1.5 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+            </div>
+          </div>
+
+          <div>
+            <label for="email" class="block text-sm font-medium text-slate-700">Email address</label>
+            <input id="email" name="email" type="email" required value="{{ employee.email }}"
+                   class="mt-1.5 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+            <p class="mt-1.5 text-xs text-slate-500">
+              This is also your sign-in address, so your login is updated to match.
+            </p>
+          </div>
+
+          <div>
+            <label for="tz" class="block text-sm font-medium text-slate-700">Timezone</label>
+            <input id="tz" name="tz" value="{{ employee.tz }}"
+                   class="mt-1.5 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+            <p class="mt-1.5 text-xs text-slate-500">
+              IANA name, e.g. <code class="rounded bg-slate-100 px-1">Africa/Nairobi</code>.
+              Shift times and dates are shown in this timezone.
+            </p>
+          </div>
+
+          <div class="flex justify-end border-t border-slate-100 pt-5">
+            <button type="submit"
+                    class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500">
+              Save changes
+            </button>
+          </div>
+        </form>
+      {% endcall %}
+
+      <!-- Read-only HR-owned fields, shown rather than hidden -->
+      {% call card('Managed by HR', 'These cannot be changed from your profile') %}
+        <dl class="grid gap-4 sm:grid-cols-2">
+          <div class="rounded-xl bg-slate-50 p-3.5 ring-1 ring-inset ring-slate-200">
+            <dt class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zM8 11V7a4 4 0 118 0v4"/>
+              </svg>
+              Employee number
+            </dt>
+            <dd class="mt-1 font-mono text-sm font-semibold text-slate-900">{{ employee.employee_no }}</dd>
+          </div>
+          <div class="rounded-xl bg-slate-50 p-3.5 ring-1 ring-inset ring-slate-200">
+            <dt class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zM8 11V7a4 4 0 118 0v4"/>
+              </svg>
+              Phone number
+            </dt>
+            <dd class="mt-1 text-sm font-semibold text-slate-900">{{ employee.phone or 'Not set' }}</dd>
+          </div>
+          <div class="rounded-xl bg-slate-50 p-3.5 ring-1 ring-inset ring-slate-200">
+            <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">Department</dt>
+            <dd class="mt-1 text-sm font-semibold text-slate-900">
+              {{ employee.department.name if employee.department else '—' }}
+            </dd>
+          </div>
+          <div class="rounded-xl bg-slate-50 p-3.5 ring-1 ring-inset ring-slate-200">
+            <dt class="text-xs font-medium uppercase tracking-wide text-slate-500">Position</dt>
+            <dd class="mt-1 text-sm font-semibold text-slate-900">
+              {{ employee.position.title if employee.position else '—' }}
+            </dd>
+          </div>
+        </dl>
+        <p class="mt-4 text-xs text-slate-500">
+          Need one of these changed? Contact HR.
+          {% if is_hr %}
+            You have HR access, so you can edit them from
+            <a href="{{ url_for('views.employee_detail', employee_id=employee.id) }}"
+               class="font-medium text-brand-600 hover:underline">your employee record</a>.
+          {% endif %}
+        </p>
+      {% endcall %}
+    </div>
+
+    <!-- Password -->
+    <div class="space-y-6">
+      {% call card('Change password') %}
+        <form method="post" action="{{ url_for('views.profile_password') }}" class="space-y-4">
+          <div>
+            <label for="current_password" class="block text-sm font-medium text-slate-700">Current password</label>
+            <input id="current_password" name="current_password" type="password" required
+                   autocomplete="current-password"
+                   class="mt-1.5 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+          </div>
+          <div>
+            <label for="new_password" class="block text-sm font-medium text-slate-700">New password</label>
+            <input id="new_password" name="new_password" type="password" required minlength="8"
+                   autocomplete="new-password"
+                   class="mt-1.5 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+            <p class="mt-1.5 text-xs text-slate-500">At least 8 characters, with letters and numbers.</p>
+          </div>
+          <div>
+            <label for="confirm_password" class="block text-sm font-medium text-slate-700">Confirm new password</label>
+            <input id="confirm_password" name="confirm_password" type="password" required minlength="8"
+                   autocomplete="new-password"
+                   class="mt-1.5 block w-full rounded-lg border-0 py-2 px-3 text-sm shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-brand-600">
+          </div>
+
+          <div class="rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-800 ring-1 ring-inset ring-amber-600/20">
+            Changing your password signs out every other device.
+          </div>
+
+          <button type="submit"
+                  class="w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500">
+            Update password
+          </button>
+        </form>
+      {% endcall %}
+
+      {% call card('Account') %}
+        <dl class="space-y-2 text-sm">
+          <div class="flex items-center justify-between">
+            <dt class="text-slate-500">Sign-in email</dt>
+            <dd class="truncate font-medium text-slate-900">{{ employee.email }}</dd>
+          </div>
+          <div class="flex items-center justify-between">
+            <dt class="text-slate-500">Role</dt>
+            <dd class="font-medium text-slate-900">{{ user.role|capitalize }}</dd>
+          </div>
+          <div class="flex items-center justify-between">
+            <dt class="text-slate-500">Status</dt>
+            <dd>
+              {% if employee.is_active %}{{ badge('Active', 'emerald', dot=True) }}
+              {% else %}{{ badge('Inactive', 'slate', dot=True) }}{% endif %}
+            </dd>
+          </div>
+        </dl>
+      {% endcall %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

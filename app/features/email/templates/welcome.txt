@@ -1,0 +1,47 @@
+{% set subject = "Your " ~ company_name ~ " account is ready" %}
+    Hello {{ first_name }},
+
+    Welcome aboard. An account has been created for you on the
+    {{ company_name }}, so you can see your attendance, request leave and
+    manage your details.
+
+    YOUR SIGN-IN DETAILS
+    ------------------------------------------------------------
+      Sign-in page : {{ login_url }}
+      Email        : {{ email }}
+      Password     : {{ temporary_password }}
+    ------------------------------------------------------------
+
+    Please sign in and change that password straight away. It was issued on your
+    behalf, so treat it as temporary and do not share it with anyone. To change
+    it, open "My profile" from the menu in the top-right corner and use the
+    "Change password" panel.
+
+    Because this password arrived by email, please change it before you do
+    anything else.
+
+    ONE MORE STEP: BIOMETRIC REGISTRATION
+    ------------------------------------------------------------
+    Your attendance is recorded by the fingerprint device, and your finger is
+    not registered yet. Until it is, your clock-ins will not be picked up.
+
+    Please visit {{ hr_contact }} to have your fingerprint registered, and bring
+    your staff number with you:
+
+      Staff number : {{ employee_no }}
+
+    That takes a couple of minutes and only needs doing once.
+
+    WHAT YOU CAN DO ONCE YOU ARE IN
+    ------------------------------------------------------------
+      - See your daily attendance and your punctuality record
+      - Request leave and see your remaining balance
+      - Check when your colleagues are away
+      - Update your own contact details
+
+    If you have any trouble signing in, or you were not expecting this email,
+    please contact {{ hr_contact }} rather than replying to this message.
+
+    --
+    {{ company_name }}
+    This is an automated message; please do not reply directly.

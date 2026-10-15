@@ -1,0 +1,66 @@
+{% from "partials/_ui.html" import leave_status_badge, btn %}
+{#
+  One suggested leave request with its accept/decline controls.
+
+  The wrapper carries a stable id so the HTMX response can replace exactly this
+  card without disturbing the others in the queue.
+#}
+<div id="leave-action-{{ request.id }}"
+     class="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-900/5">
+  <div class="min-w-0">
+    <div class="flex flex-wrap items-center gap-2">
+      <p class="text-sm font-semibold text-slate-900">
+        {{ request.leave_type|replace('_',' ')|title }}
+        <span class="font-normal text-slate-300">&middot;</span>
+        {{ request.days }} day(s)
+      </p>
+      {{ leave_status_badge(request.status) }}
+    </div>
+    <p class="mt-1 text-xs text-slate-500">
+      Suggested {{ request.start_date.strftime('%a %d %b %Y') }} &ndash; {{ request.end_date.strftime('%a %d %b %Y') }}
+      {% if request.denial_count %}
+        <span class="ml-1 font-medium text-amber-700">your one decline has been used</span>
+      {% endif %}
+    </p>
+
+    {% if request.suggestions and request.suggestions|length > 1 %}
+      <details class="mt-2">
+        <summary class="cursor-pointer text-xs font-medium text-brand-600 hover:text-brand-700">
+          Show {{ request.suggestions|length - 1 }} other option(s)
+        </summary>
+        <ul class="mt-1.5 space-y-1">
+          {% for option in request.suggestions[1:] %}
+            <li class="text-xs text-slate-600">
+              <span class="font-medium">{{ option.start_date }} &rarr; {{ option.end_date }}</span>
+              ({{ option.days }}d, score {{ option.score }})
+            </li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+  </div>
+
+  <div class="flex shrink-0 items-center gap-2">
+    <form hx-post="{{ url_for('views.leave_respond', request_id=request.id) }}"
+          hx-vals='{"action": "accept"}'
+          hx-target="#leave-action-{{ request.id }}"
+          hx-swap="outerHTML">
+      <button type="submit"
+              class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500">
+        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2.4" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+        </svg>
+        Accept
+      </button>
+    </form>
+    <form hx-post="{{ url_for('views.leave_respond', request_id=request.id) }}"
+          hx-vals='{"action": "deny"}'
+          hx-target="#leave-action-{{ request.id }}"
+          hx-swap="outerHTML">
+      <button type="submit"
+              class="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+        Decline
+      </button>
+    </form>
+  </div>
+</div>

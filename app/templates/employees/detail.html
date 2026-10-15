@@ -1,0 +1,250 @@
+{% extends "layouts/app.html" %}
+{% from "partials/_macros.html" import avatar, color_badge, kpi, status_badge, leave_status_badge, bar, empty_state %}
+
+{% block page_title %}{{ employee.full_name }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="{ tab: 'attendance' }">
+
+  <!-- Header -->
+  <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="flex items-center gap-4">
+        {{ avatar(employee.first_name, employee.last_name, employee.current_color, 'h-14 w-14 text-base') }}
+        <div>
+          <h1 class="text-xl font-bold tracking-tight text-slate-900">{{ employee.full_name }}</h1>
+          <p class="text-sm text-slate-500">
+            {{ employee.employee_no }} · {{ employee.position.title if employee.position else 'No position' }}
+            · {{ employee.department.name if employee.department else 'No department' }}
+          </p>
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            {{ color_badge(employee.current_color) }}
+            {% if employee.is_active %}
+              <span class="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">Active</span>
+            {% else %}
+              <span class="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-500/20">Inactive</span>
+            {% endif %}
+            <span class="text-xs text-slate-500">{{ employee.email }}</span>
+            {% if employee.phone %}<span class="text-xs text-slate-500">· {{ employee.phone }}</span>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-2">
+        {% if current_user.is_hr_or_admin %}
+          {% if employee.user_id and employee.user_id in waiting_on_password %}
+            <span class="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 ring-1 ring-inset ring-amber-300">
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/>
+              </svg>
+              Has not signed in yet
+            </span>
+          {% endif %}
+          {% if employee.user_id %}
+            <form method="post"
+                  action="{{ url_for('views.employee_resend_welcome', employee_id=employee.id) }}"
+                  data-confirm="Generate a new temporary password and email it to {{ employee.email }}? Their current password will stop working.">
+              <button type="submit"
+                      class="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+                Resend welcome email
+              </button>
+            </form>
+          {% endif %}
+          <form method="post"
+                action="{{ url_for('views.employee_set_active', employee_id=employee.id, state=('false' if employee.is_active else 'true')) }}"
+                data-confirm="{{ 'Deactivate' if employee.is_active else 'Reactivate' }} {{ employee.full_name }}?">
+            <button type="submit"
+                    class="rounded-lg px-3 py-2 text-sm font-semibold ring-1 ring-inset
+                           {{ 'text-rose-700 ring-rose-300 hover:bg-rose-50' if employee.is_active else 'text-emerald-700 ring-emerald-300 hover:bg-emerald-50' }}">
+              {{ 'Deactivate' if employee.is_active else 'Reactivate' }}
+            </button>
+          </form>
+        {% endif %}
+        <a href="{{ url_for('views.attendance_employee', employee_id=employee.id) }}"
+           class="rounded-lg px-3 py-2 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+          Attendance history
+        </a>
+      </div>
+    </div>
+
+    <!-- KPI strip -->
+    <div class="mt-5 grid gap-4 border-t border-slate-100 pt-5 sm:grid-cols-2 lg:grid-cols-4">
+      <div>
+        <p class="text-xs uppercase tracking-wide text-slate-500">Tenure</p>
+        <p class="mt-1 text-xl font-bold text-slate-900">{{ tenure }}</p>
+        <p class="text-xs text-slate-500">since {{ employee.hired_at.strftime('%d %b %Y') if employee.hired_at else '—' }}</p>
+      </div>
+      <div>
+        <p class="text-xs uppercase tracking-wide text-slate-500">Avg worked / day</p>
+        <p class="mt-1 text-xl font-bold text-slate-900">{{ '%.1fh'|format(avg_worked / 60) }}</p>
+        <p class="text-xs text-slate-500">{{ ytd.recorded_days or 0 }} days recorded</p>
+      </div>
+      <div>
+        <p class="text-xs uppercase tracking-wide text-slate-500">Late days YTD</p>
+        <p class="mt-1 text-xl font-bold text-amber-600">{{ ytd.late_days or 0 }}</p>
+        <p class="text-xs text-slate-500">{{ ytd.total_late_minutes or 0 }} minutes total</p>
+      </div>
+      <div>
+        <p class="text-xs uppercase tracking-wide text-slate-500">Leave taken YTD</p>
+        <p class="mt-1 text-xl font-bold text-brand-600">{{ leave_taken_ytd }}</p>
+        <p class="text-xs text-slate-500">days approved</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upcoming leave banner -->
+  {% if upcoming %}
+    {% set next_leave = upcoming[0] %}
+    <div class="rounded-2xl bg-sky-50 p-4 ring-1 ring-inset ring-sky-600/20">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-semibold text-sky-900">
+            Upcoming leave · {{ next_leave.leave_type|replace('_',' ')|title }}
+          </p>
+          <p class="text-xs text-sky-700">
+            {{ next_leave.start_date.strftime('%a %d %b %Y') }} – {{ next_leave.end_date.strftime('%a %d %b %Y') }}
+            ({{ next_leave.days }} day{{ '' if next_leave.days == 1 else 's' }})
+          </p>
+        </div>
+        {{ leave_status_badge(next_leave.status) }}
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- Balances -->
+  <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <h2 class="text-sm font-semibold text-slate-900">Leave balances · {{ today.year }}</h2>
+    <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {% for balance in balances %}
+        <div class="rounded-xl border border-slate-200 p-4">
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-medium text-slate-800">{{ balance.leave_type|replace('_',' ')|title }}</p>
+            <span class="text-sm font-semibold text-slate-900">{{ balance.available }}<span class="text-xs font-normal text-slate-500">/{{ balance.entitled }}</span></span>
+          </div>
+          <div class="mt-2">{{ bar(balance.used, balance.entitled) }}</div>
+          <p class="mt-2 text-xs text-slate-500">{{ balance.used }} used{% if balance.pending %} · {{ balance.pending }} reserved{% endif %}</p>
+        </div>
+      {% else %}
+        <p class="text-sm text-slate-500">No balances allocated.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+    <div class="flex gap-1 border-b border-slate-100 px-3 pt-3">
+      {% for key, label in [('attendance','Attendance'), ('leave','Leave'), ('disciplinary','Disciplinary')] %}
+        <button @click="tab = '{{ key }}'"
+                :class="tab === '{{ key }}' ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700'"
+                class="rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium">
+          {{ label }}
+        </button>
+      {% endfor %}
+    </div>
+
+    <!-- Attendance -->
+    <div x-show="tab === 'attendance'" class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-slate-100 text-sm">
+        <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="px-5 py-2 text-left font-medium">Date</th>
+            <th class="px-5 py-2 text-left font-medium">In</th>
+            <th class="px-5 py-2 text-left font-medium">Out</th>
+            <th class="px-5 py-2 text-left font-medium">Worked</th>
+            <th class="px-5 py-2 text-left font-medium">Late</th>
+            <th class="px-5 py-2 text-left font-medium">Early</th>
+            <th class="px-5 py-2 text-left font-medium">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for row in history %}
+            <tr>
+              <td class="px-5 py-2 text-slate-700">{{ row.work_date.strftime('%a %d %b %Y') }}</td>
+              <td class="px-5 py-2 text-slate-600">{{ row.clock_in.strftime('%H:%M') if row.clock_in else '—' }}</td>
+              <td class="px-5 py-2 text-slate-600">{{ row.clock_out.strftime('%H:%M') if row.clock_out else '—' }}</td>
+              <td class="px-5 py-2 text-slate-600">{{ '%.1fh'|format(row.worked_minutes / 60) if row.worked_minutes else '—' }}</td>
+              <td class="px-5 py-2">{% if row.late_minutes %}<span class="text-amber-600">{{ row.late_minutes }}m</span>{% else %}—{% endif %}</td>
+              <td class="px-5 py-2">{% if row.early_leave_minutes %}<span class="text-orange-600">{{ row.early_leave_minutes }}m</span>{% else %}—{% endif %}</td>
+              <td class="px-5 py-2">{{ status_badge(row.status) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7" class="px-5 py-8 text-center text-slate-500">No attendance recorded.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Leave -->
+    <div x-show="tab === 'leave'" x-cloak class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-slate-100 text-sm">
+        <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="px-5 py-2 text-left font-medium">Type</th>
+            <th class="px-5 py-2 text-left font-medium">Window</th>
+            <th class="px-5 py-2 text-left font-medium">Days</th>
+            <th class="px-5 py-2 text-left font-medium">Denials</th>
+            <th class="px-5 py-2 text-left font-medium">Status</th>
+            <th class="px-5 py-2 text-left font-medium">Requested</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for request in leave_requests %}
+            <tr>
+              <td class="px-5 py-2 text-slate-700">{{ request.leave_type|replace('_',' ')|title }}</td>
+              <td class="px-5 py-2 text-slate-600">
+                {{ request.start_date.strftime('%d %b %Y') }} – {{ request.end_date.strftime('%d %b %Y') }}
+              </td>
+              <td class="px-5 py-2 text-slate-600">{{ request.days }}</td>
+              <td class="px-5 py-2 text-slate-600">{{ request.denial_count }}</td>
+              <td class="px-5 py-2">{{ leave_status_badge(request.status) }}</td>
+              <td class="px-5 py-2 text-xs text-slate-500">{{ request.created_at.strftime('%d %b %Y') }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="px-5 py-8 text-center text-slate-500">No leave requests.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Disciplinary -->
+    <div x-show="tab === 'disciplinary'" x-cloak class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-slate-100 text-sm">
+        <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="px-5 py-2 text-left font-medium">Date</th>
+            <th class="px-5 py-2 text-left font-medium">Action</th>
+            <th class="px-5 py-2 text-left font-medium">Trigger</th>
+            <th class="px-5 py-2 text-left font-medium">Observed</th>
+            <th class="px-5 py-2 text-left font-medium">Suspension</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for action in actions %}
+            <tr>
+              <td class="px-5 py-2 text-slate-700">{{ action.triggered_on.strftime('%d %b %Y') }}</td>
+              <td class="px-5 py-2">
+                <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset
+                             {{ 'bg-amber-100 text-amber-700 ring-amber-600/20' if action.action == 'warning'
+                                else 'bg-orange-100 text-orange-700 ring-orange-600/20' if action.action == 'written_warning'
+                                else 'bg-rose-100 text-rose-700 ring-rose-600/20' }}">
+                  {{ action.action|replace('_',' ')|title }}
+                </span>
+              </td>
+              <td class="px-5 py-2 text-slate-600">
+                {{ (action.trigger_type or '—')|replace('_',' ')|title }}
+                {% if action.threshold %}<span class="text-xs text-slate-400">(≥{{ action.threshold }} / {{ action.period }})</span>{% endif %}
+              </td>
+              <td class="px-5 py-2 text-slate-600">{{ (action.details or {}).get('observed', '—') }}</td>
+              <td class="px-5 py-2 text-slate-600">
+                {{ action.suspension_days ~ ' day(s)' if action.suspension_days else '—' }}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="px-5 py-8 text-center text-slate-500">No disciplinary actions on record.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

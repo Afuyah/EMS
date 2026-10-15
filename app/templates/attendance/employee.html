@@ -1,0 +1,106 @@
+{% extends "layouts/app.html" %}
+{% from "partials/_ui.html" import kpi, avatar, status_badge, progress, card %}
+
+{% block page_title %}{{ employee.full_name }} &middot; attendance{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      {{ avatar(employee.first_name, employee.last_name, employee.current_color, 'h-12 w-12') }}
+      <div>
+        <h1 class="text-lg font-bold text-slate-900">{{ employee.full_name }}</h1>
+        <p class="text-sm text-slate-500">
+          {{ employee.employee_no }}
+          <span class="text-slate-300">&middot;</span>
+          {{ employee.department.name if employee.department else '—' }}
+        </p>
+      </div>
+    </div>
+    <a href="{{ url_for('views.employee_detail', employee_id=employee.id) }}"
+       class="rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+      Full profile
+    </a>
+  </div>
+
+  <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    {{ kpi('Days recorded', stats.recorded_days or 0, 'year to date') }}
+    {{ kpi('On-time rate', on_time_percent ~ '%', 'of recorded working days', 'emerald') }}
+    {{ kpi('Late days', stats.late_days or 0, (stats.total_late_minutes or 0) ~ ' minutes in total',
+           'amber' if stats.late_days else 'slate') }}
+    {{ kpi('Average worked', '%.1fh'|format(avg_worked / 60), 'per recorded day') }}
+  </div>
+
+  <div class="grid gap-4 sm:grid-cols-3">
+    <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+      <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Current late streak</p>
+      <p class="mt-2 text-3xl font-bold {{ 'text-amber-600' if longest_streak else 'text-emerald-600' }}">
+        {{ longest_streak }}
+      </p>
+      <p class="mt-1 text-xs text-slate-500">
+        {{ 'consecutive late day(s)' if longest_streak else 'no active late streak' }}
+      </p>
+    </div>
+    <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+      <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Absences</p>
+      <p class="mt-2 text-3xl font-bold {{ 'text-rose-600' if stats.absent_days else 'text-slate-900' }}">
+        {{ stats.absent_days or 0 }}
+      </p>
+      <p class="mt-1 text-xs text-slate-500">year to date</p>
+    </div>
+    <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+      <p class="text-xs font-medium uppercase tracking-wider text-slate-500">Leave days</p>
+      <p class="mt-2 text-3xl font-bold text-brand-600">{{ stats.on_leave_days or 0 }}</p>
+      <p class="mt-1 text-xs text-slate-500">year to date</p>
+    </div>
+  </div>
+
+  {% call card('On-time performance', 'Share of recorded days without a late arrival') %}
+    {{ progress(on_time_percent, 100, 'emerald' if on_time_percent >= 90 else 'amber' if on_time_percent >= 70 else 'rose') }}
+    <div class="mt-2 flex justify-between text-xs text-slate-500">
+      <span>{{ on_time_percent }}% on time</span>
+      <span>{{ 100 - on_time_percent }}% late</span>
+    </div>
+  {% endcall %}
+
+  {% call card('Full history ' ~ today.year) %}
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="pb-2 pr-4 text-left font-semibold">Date</th>
+            <th class="pb-2 pr-4 text-left font-semibold">In</th>
+            <th class="pb-2 pr-4 text-left font-semibold">Out</th>
+            <th class="pb-2 pr-4 text-right font-semibold">Worked</th>
+            <th class="pb-2 pr-4 text-right font-semibold">Late</th>
+            <th class="pb-2 pr-4 text-right font-semibold">Early</th>
+            <th class="pb-2 pr-4 text-left font-semibold">Status</th>
+            <th class="pb-2 text-left font-semibold">Notes</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for row in history %}
+            <tr class="transition hover:bg-slate-50/60">
+              <td class="py-2.5 pr-4 text-slate-700">{{ row.work_date.strftime('%a %d %b %Y') }}</td>
+              <td class="py-2.5 pr-4 text-slate-600">{{ row.clock_in.strftime('%H:%M') if row.clock_in else '—' }}</td>
+              <td class="py-2.5 pr-4 text-slate-600">{{ row.clock_out.strftime('%H:%M') if row.clock_out else '—' }}</td>
+              <td class="py-2.5 pr-4 text-right text-slate-600">{{ '%.1fh'|format(row.worked_minutes / 60) if row.worked_minutes else '—' }}</td>
+              <td class="py-2.5 pr-4 text-right">
+                {% if row.late_minutes %}<span class="font-medium text-amber-600">{{ row.late_minutes }}m</span>{% else %}<span class="text-slate-300">—</span>{% endif %}
+              </td>
+              <td class="py-2.5 pr-4 text-right">
+                {% if row.early_leave_minutes %}<span class="font-medium text-orange-600">{{ row.early_leave_minutes }}m</span>{% else %}<span class="text-slate-300">—</span>{% endif %}
+              </td>
+              <td class="py-2.5 pr-4">{{ status_badge(row.status) }}</td>
+              <td class="py-2.5 text-xs text-slate-500">{{ row.notes or '' }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="8" class="py-12 text-center text-slate-500">No attendance recorded this year.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endcall %}
+</div>
+{% endblock %}
