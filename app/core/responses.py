@@ -15,7 +15,13 @@ from flask import Response, jsonify, request
 
 def wants_json() -> bool:
     """True when the caller should receive JSON rather than HTML."""
-    if request.path.startswith("/api/") or request.path.startswith("/hooks/"):
+    if (
+        request.path.startswith("/api/")
+        or request.path.startswith("/hooks/")
+        # ADMS devices expect a plain-text reply and cannot read an HTML error
+        # page, so never hand them markup.
+        or request.path.startswith("/iclock/")
+    ):
         return True
     if request.is_json:
         return True

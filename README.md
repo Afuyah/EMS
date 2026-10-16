@@ -201,13 +201,38 @@ run from the CLI without a broker.
 
 ### Biometrics
 
-Devices authenticate with `X-Device-SN` + `X-Device-Secret` (the secret is
-stored hashed, salted with the serial). Vendor payloads are normalised by a
-pluggable adapter — ZKTeco, Hikvision and a generic shape ship in
-`features/biometrics/adapters/`.
+Two ways in, because hardware and software callers need different things.
 
-Every accepted punch is written to `biometric_raw_logs`, which is **append-only**
-and never updated or deleted. Idempotency uses
+**Physical terminals — the ZKTeco ADMS ("iClock") protocol.** Terminals that
+support ADMS push to a server from their own menu. The MB20-VL lists ADMS as a
+standard function. Point the device at your domain:
+
+| Device menu field | Value |
+| --- | --- |
+| Server Address | the domain, without `https://` |
+| Server Port | `443` |
+| Comm Key | the device secret, shown once at registration |
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/iclock/cdata?SN=…` | Handshake, then the device pushes |
+| POST | `/iclock/cdata?SN=…&table=ATTLOG` | Attendance records |
+| GET | `/iclock/getrequest?SN=…` | Command polling |
+| GET | `/iclock/ping` | Reachability probe (no auth, exposes nothing) |
+
+Replies are plain text: `OK` means stored, anything else makes the device retry.
+These routes exist as a separate endpoint because a device posts
+form-encoded data, **cannot set custom headers**, and cannot read an HTML or JSON
+error page — so the JSON webhook below is unusable for real hardware.
+
+**Software callers — the JSON webhook.** Devices and bridges that *can* set
+headers authenticate with `X-Device-SN` + `X-Device-Secret` (the secret is stored
+hashed, salted with the serial) and post JSON to `/hooks/biometrics/punch`.
+Vendor payloads are normalised by a pluggable adapter — ZKTeco, Hikvision and a
+generic shape ship in `features/biometrics/adapters/`.
+
+Every accepted punch from either path is written to `biometric_raw_logs`, which
+is **append-only** and never updated or deleted. Idempotency uses
 
 ```
 sha256(device_sn | device_user_id | punch_time_iso | punch_type)

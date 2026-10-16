@@ -156,6 +156,83 @@ class BiometricsController:
             200,
         )
 
+    def heartbeat_for_serial(self, serial_no: str) -> None:
+        """Mark a device seen when only its serial is known.
+
+        Used by the ADMS command-poll route, which has no parsed push to hand and
+        therefore no device object yet.
+        """
+        device = self.service.devices.get_by_serial(serial_no)
+        if device is None:
+            return
+        try:
+            self.service.touch(device)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
+
+    # ---- ADMS punch ingestion -------------------------------------------
+    def ingest_adms_punch(self, *, device, punch) -> dict:
+        """Store one ADMS punch and resolve it into attendance.
+
+        Mirrors :meth:`ingest_punch` but takes an already-parsed
+        :class:`~app.features.biometrics.adms.ADMSPunch`, because the ADMS wire
+        format has no JSON object for an adapter to read.
+
+        Commits once per punch. The caller treats a raise as "retry this batch",
+        and every punch is idempotent via its content hash, so a retry is safe.
+        """
+        from app.features.biometrics.adapters import DeviceAdapter, ParsedPunch
+        from app.features.biometrics.exceptions import MalformedPunchError
+
+        if punch.punch_time is None or not punch.device_user_id:
+            raise MalformedPunchError("The ADMS punch is missing a user or time.")
+
+        # Reuse the adapter's status mapping (ZKTeco: 0 = in, 1 = out) rather
+        # than repeating the convention here.
+        parsed = ParsedPunch(
+            device_user_id=str(punch.device_user_id).strip(),
+            punch_time=punch.punch_time,
+            punch_type=DeviceAdapter._parse_type(punch.status),
+            raw={"line": punch.raw_line, "status": punch.status},
+        )
+
+        try:
+            mapping, raw_log, created, reason = self.service.record_punch(
+                device=device,
+                parsed=parsed,
+                raw_payload=parsed.raw,
+            )
+            self.service.touch(device)
+
+            if not created or mapping is None:
+                # Duplicate, or a user id with no employee mapping. Both are
+                # successfully handled: auditing them is the correct outcome.
+                db.session.commit()
+                return {"stored": True, "duplicate": not created, "reason": reason}
+
+            employee = mapping.employee
+            record = self.attendance.apply_punch(
+                employee_id=employee.id,
+                department_id=employee.department_id,
+                tz_name=employee.tz,
+                punch_time=parsed.punch_time,
+                punch_type=parsed.punch_type,
+            )
+            self.service.mark_processed(raw_log)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
+
+        return {
+            "stored": True,
+            "duplicate": False,
+            "reason": reason,
+            "attendance_id": record.id,
+        }
+
     # ---- device administration ------------------------------------------
     def list_devices(self):
         """Plain list of device dicts; the blueprint wraps the envelope."""

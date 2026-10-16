@@ -396,7 +396,6 @@ LIMIT 20;
 ---
 
 ## 13. The nightly schedule, for reference
-
 | Job | Schedule (`DEFAULT_TIMEZONE`) | What it does |
 | --- | --- | --- |
 | `notifications-dispatcher` | every 60s | Delivers in-app notifications |
@@ -412,7 +411,76 @@ so a shift ending at midnight is still settled before the next morning.
 
 ---
 
-## 14. Troubleshooting
+## 14. Connecting a biometric terminal
+
+ZKTeco terminals that support **ADMS** push their records to a server you
+configure. The MB20-VL lists ADMS as a standard function, so it can talk to this
+deployment directly — no local PC or SDK bridge.
+
+### What to type into the device
+
+Register the device first on **Devices** in the app. The page then shows the
+exact values to enter; they are:
+
+| Device menu field | Value |
+| --- | --- |
+| Server Address | your Railway domain, **without** `https://`, e.g. `kenems.up.railway.app` |
+| Server Port | `443` |
+| Comm Key | the device's secret, shown once when you register it |
+
+The menu path varies by firmware — usually **Menu → Comm. → Cloud Server
+Setting** or **ADMS**. The device's own serial number (Menu → Info → Device
+Serial Number) must match the one you registered.
+
+### Check reachability before touching the device
+
+```bash
+curl https://<your-domain>/iclock/ping
+# OK
+```
+
+That endpoint is deliberately unauthenticated and exposes nothing, so you can
+confirm the path from a browser on the same network as the device.
+
+### How it works
+
+The device drives the protocol; the paths are its choice, not ours:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/iclock/cdata?SN=…` | Handshake — tells the device to start pushing |
+| POST | `/iclock/cdata?SN=…&table=ATTLOG` | Attendance records |
+| GET | `/iclock/getrequest?SN=…` | Device polling for commands |
+| GET | `/iclock/ping` | Reachability probe |
+
+Replies are **plain text**: `OK` means stored. Anything else makes the device
+keep the record and retry — which is what happens on a failure. Ingestion is
+idempotent per punch, so a retry cannot create duplicates.
+
+### Why there is a separate ADMS endpoint
+
+The JSON webhook at `/hooks/biometrics/punch` cannot serve real hardware:
+
+* A device posts `application/x-www-form-urlencoded`, not JSON.
+* A device **cannot set custom headers**, so it cannot send the
+  `X-Device-SN` / `X-Device-Secret` pair that webhook requires. Its serial
+  number arrives in the body and its key arrives as `CommKey`.
+* It expects plain text and cannot read an HTML or JSON error page.
+
+The `/iclock` routes exist for exactly these reasons and should be left open
+(they authenticate on the CommKey).
+
+### Troubleshooting
+
+| Symptom | Cause |
+| --- | --- |
+| Device shows "connect failed" | No internet on the device's network, or the address still has `https://` in it |
+| `/iclock/ping` works but no data | The serial number on the device does not match the registered one |
+| Punches arrive, no attendance rows | The device's user ID is not mapped — use **Devices → map** |
+| Works on HTTP but not HTTPS | Older firmware only supports HTTP on port 80 and needs a firmware update |
+| Everything refused with 401 | Wrong `Comm Key`, or the device was deactivated |
+
+## 15. Troubleshooting
 
 **`ModuleNotFoundError: No module named 'psycopg'`**
 
@@ -470,7 +538,7 @@ have it too, since email delivery happens there).
 
 ---
 
-## 15. Scaling notes
+## 16. Scaling notes
 
 * **Scale `web`** by raising replicas. Sessions are JWT cookies, so no sticky
   sessions are needed.

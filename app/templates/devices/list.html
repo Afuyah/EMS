@@ -36,6 +36,61 @@
     </div>
   {% endif %}
 
+  {# ---------------------------------------------------------------------
+     ADMS device setup.
+
+     ZKTeco terminals that support ADMS (the MB20-VL lists it as a standard
+     function) are pointed at a server from their own menu. That menu offers
+     only an address, a port and a communication key — the device cannot set
+     custom headers — so these are the three values to type in.
+     --------------------------------------------------------------------- #}
+  <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <h2 class="text-sm font-semibold text-slate-900">Point a ZKTeco terminal at this system</h2>
+    <p class="mt-1 text-xs text-slate-500">
+      In the device menu open <span class="font-medium">Menu &rarr; Comm. &rarr; Cloud Server
+      Setting</span> (wording varies by firmware) and enter these values.
+    </p>
+    <dl class="mt-4 grid gap-3 sm:grid-cols-3">
+      <div class="rounded-xl bg-slate-50 p-3 ring-1 ring-inset ring-slate-200">
+        <dt class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Server address</dt>
+        <dd class="mt-1 break-all text-xs font-medium text-slate-800">{{ adms_host }}</dd>
+      </div>
+      <div class="rounded-xl bg-slate-50 p-3 ring-1 ring-inset ring-slate-200">
+        <dt class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Server port</dt>
+        <dd class="mt-1 text-xs font-medium text-slate-800">{{ adms_port }}</dd>
+      </div>
+      <div class="rounded-xl bg-slate-50 p-3 ring-1 ring-inset ring-slate-200">
+        <dt class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Comm key</dt>
+        <dd class="mt-1 text-xs font-medium text-slate-800">
+          the secret shown above for that device
+        </dd>
+      </div>
+    </dl>
+    <p class="mt-3 text-xs text-slate-500">
+      Enter the address <span class="font-medium">without</span> <code class="rounded bg-slate-100 px-1">https://</code>
+      and without a trailing slash. Leave the communication key as the default
+      (<code class="rounded bg-slate-100 px-1">0</code>) only if you have not set one.
+    </p>
+    <div class="mt-3 rounded-xl bg-slate-50 p-3 ring-1 ring-inset ring-slate-200">
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Check reachability first</p>
+      <p class="mt-1 text-xs text-slate-600">
+        Open this in a browser on the same network as the device. It should say
+        <code class="rounded bg-slate-100 px-1">OK</code>:
+      </p>
+      <code class="mt-2 block break-all rounded-lg bg-white px-3 py-2 text-xs text-slate-800 ring-1 ring-inset ring-slate-300">{{ adms_probe_url }}</code>
+    </div>
+    <details class="mt-3">
+      <summary class="cursor-pointer text-xs font-medium text-brand-700">If it does not connect</summary>
+      <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600">
+        <li>The device needs internet access — check its network cable and DHCP.</li>
+        <li>Firmware must support ADMS. Check <span class="font-medium">Menu &rarr; Info</span> for a firmware version and an ADMS or Cloud Server option.</li>
+        <li>Very old firmware only supports HTTP on port 80. If the device rejects port 443, it needs a firmware update to push over HTTPS.</li>
+        <li>Confirm the serial number registered here matches the one in
+            <span class="font-medium">Menu &rarr; Info &rarr; Device Serial Number</span> exactly.</li>
+      </ul>
+    </details>
+  </div>
+
   <div class="grid gap-6 lg:grid-cols-2">
     <!-- Register -->
     <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">

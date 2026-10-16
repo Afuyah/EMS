@@ -139,6 +139,9 @@ def _register_request_hooks(app: Flask) -> None:
         path = request.path
         if (
             path.startswith("/hooks/")
+            # ADMS devices authenticate with their CommKey in the body, not with
+            # a JWT, and cannot send an Authorization header at all.
+            or path.startswith("/iclock/")
             or path.startswith("/api/docs")
             or path in {"/api/v1/health", "/health", "/app/health"}
             or path.startswith("/static/")
@@ -169,17 +172,20 @@ def _register_request_hooks(app: Flask) -> None:
 
 
 def _register_blueprints(app: Flask) -> None:
-    """Attach the JSON API, the Swagger UI, the HTML views and the webhook."""
+    """Attach the JSON API, the Swagger UI, the HTML views and the webhooks."""
     from app.features.api import api_v1
     from app.features.docs.routes import docs_bp
     from app.views.blueprint import views_bp
     from app.features.biometrics.blueprint import hooks_bp
+    from app.features.biometrics.iclock import iclock_bp
 
     # /api/v1 is the versioned API; /api/docs is its sibling.
     app.register_blueprint(api_v1, url_prefix="/api/v1")
     app.register_blueprint(docs_bp, url_prefix="/api/docs")
     app.register_blueprint(views_bp)
     app.register_blueprint(hooks_bp)
+    # The ZKTeco ADMS protocol the physical terminals speak.
+    app.register_blueprint(iclock_bp)
 
     @app.get("/api/v1/health")
     @app.get("/health")

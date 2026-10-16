@@ -24,10 +24,14 @@ class PunchType(str, Enum):
 
 
 class DeviceVendor(str, Enum):
-    """Supported biometric device families."""
+    """Supported biometric device families.
 
-    ZKTECO = "zktco"
-    ZKTECO_LEGACY = "zkteco"
+    Every value here must be a key in :data:`ADAPTER_REGISTRY`, because
+    registering a device resolves its adapter through this value. A mismatch
+    raises ``UnsupportedVendorError`` at registration time.
+    """
+
+    ZKTECO = "zkteco"
     HIKVISION = "hikvision"
     GENERIC = "generic"
 

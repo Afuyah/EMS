@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import request, url_for
+from flask import current_app, request, url_for
 
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
@@ -30,6 +30,36 @@ _devices = BiometricsService()
 _employees = EmployeeService()
 
 
+def _adms_connection_details() -> dict:
+    """The three values to type into a terminal's server menu.
+
+    A device menu accepts a bare host and a port, not a URL, so the configured
+    public base URL is split for it. ``APP_BASE_URL`` is used when set, because
+    the device must reach the public address rather than whatever host this
+    request happened to arrive on.
+    """
+    from urllib.parse import urlparse
+
+    raw = (current_app.config.get("APP_BASE_URL") or "").strip()
+    if not raw:
+        raw = request.url_root
+    parsed = urlparse(raw if "//" in raw else f"https://{raw}")
+
+    host = parsed.hostname or ""
+    scheme = parsed.scheme or "https"
+    port = parsed.port or (443 if scheme == "https" else 80)
+
+    return {
+        "adms_host": host,
+        "adms_port": port,
+        # Unauthenticated liveness probe, so reachability can be tested from a
+        # browser before touching the device's configuration.
+        "adms_probe_url": f"{scheme}://{host}:{port}/iclock/ping"
+        if port not in (80, 443)
+        else f"{scheme}://{host}/iclock/ping",
+    }
+
+
 @views_bp.get("/devices")
 @view_login_required()
 @view_roles_required(Role.ADMIN)
@@ -47,6 +77,7 @@ def devices():
         vendors=sorted(ADAPTER_REGISTRY),
         new_secret=request.args.get("secret"),
         new_serial=request.args.get("serial"),
+        **_adms_connection_details(),
     )
 
 
