@@ -29,6 +29,39 @@ def _env_list(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+#: The DBAPI this project installs. ``psycopg2-binary`` provides the
+#: ``psycopg2`` driver; psycopg 3 is a different package.
+POSTGRES_DRIVER = "psycopg2"
+
+
+def normalise_database_url(url: str | None) -> str | None:
+    """Force the PostgreSQL driver to the one we actually install.
+
+    Managed platforms hand you a bare URL like ``postgresql://...`` (Railway)
+    or the legacy ``postgres://...`` (Heroku). SQLAlchemy 2.x resolves a bare
+    ``postgresql://`` to **psycopg 3**, which this project does not depend on,
+    so the app dies at import with ``ModuleNotFoundError: No module named
+    'psycopg'``.
+
+    Pinning the driver makes any of these forms work:
+
+        postgres://...              -> postgresql+psycopg2://...
+        postgresql://...            -> postgresql+psycopg2://...
+        postgresql+psycopg2://...   -> unchanged
+        postgresql+psycopg://...    -> unchanged (explicitly asked for)
+
+    Non-PostgreSQL URLs (SQLite in tests) are returned untouched.
+    """
+    if not url:
+        return url
+
+    text = url.strip()
+    for prefix in ("postgres://", "postgresql://"):
+        if text.startswith(prefix):
+            return f"postgresql+{POSTGRES_DRIVER}://" + text[len(prefix):]
+    return text
+
+
 class BaseConfig:
     """Settings shared by every environment."""
 
@@ -39,8 +72,13 @@ class BaseConfig:
     TEMPLATES_AUTO_RELOAD = False
 
     # --- SQLAlchemy ---
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DATABASE_URL", "postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/ems_dev"
+    # Normalised so a bare ``postgresql://`` from a managed platform still uses
+    # the psycopg2 driver this project ships.
+    SQLALCHEMY_DATABASE_URI = normalise_database_url(
+        os.getenv(
+            "DATABASE_URL",
+            "postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/ems_dev",
+        )
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
@@ -133,8 +171,11 @@ class DevelopmentConfig(BaseConfig):
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
     # Slightly longer TTLs make manual poking at the UI less annoying.
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=60)
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DATABASE_URL", "postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/ems_dev"
+    SQLALCHEMY_DATABASE_URI = normalise_database_url(
+        os.getenv(
+            "DATABASE_URL",
+            "postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/ems_dev",
+        )
     )
 
 
@@ -150,9 +191,11 @@ class TestingConfig(BaseConfig):
     SMS_ENABLED = False
     AUTH_REQUIRED = True
     CELERY_TASK_ALWAYS_EAGER = True
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        "TEST_DATABASE_URL",
-        "postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/ems_test",
+    SQLALCHEMY_DATABASE_URI = normalise_database_url(
+        os.getenv(
+            "TEST_DATABASE_URL",
+            "postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/ems_test",
+        )
     )
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
@@ -186,7 +229,9 @@ class ProductionConfig(BaseConfig):
             problems.append("JWT_SECRET_KEY must be set to at least 32 characters")
 
         database_url = os.getenv("DATABASE_URL", "")
-        if not database_url.startswith("postgresql"):
+        # Accept the bare forms managed platforms provide (``postgres://`` on
+        # Heroku, ``postgresql://`` on Railway) as well as an explicit driver.
+        if not database_url.startswith(("postgresql", "postgres://")):
             problems.append("DATABASE_URL must point at PostgreSQL")
 
         origins = _env_list("CORS_ORIGINS")
