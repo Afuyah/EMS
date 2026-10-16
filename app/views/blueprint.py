@@ -38,10 +38,14 @@ def _register_view_modules() -> None:
 @views_bp.get("")
 @views_bp.get("/")
 def index():
-    """Bare ``/app`` sends the visitor to the right dashboard."""
+    """Bare ``/app`` sends the visitor to the right place."""
     from flask import redirect, url_for
 
-    return redirect(url_for("views.dashboard"))
+    from app.views.helpers import is_signed_in
+
+    if is_signed_in():
+        return redirect(url_for("views.dashboard"))
+    return redirect(url_for("views.login"))
 
 
 _register_view_modules()

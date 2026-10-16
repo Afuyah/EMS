@@ -244,6 +244,20 @@ blip cannot create a second attendance row and receives `duplicate: true`.
 Punches for unmapped device users are acknowledged (HTTP 200) and audited, so
 the device does not queue and retry forever.
 
+### Entry points
+
+The web UI is namespaced under `/app`, but the bare domain and the obvious URLs
+are handled so a typed address is never a dead end:
+
+| URL | Behaviour |
+| --- | --- |
+| `/` | dashboard when signed in, sign-in page otherwise |
+| `/login`, `/logout` | forward to the real routes (`?next=` is preserved) |
+| `/dashboard`, `/employees`, `/leave`, `/reports`, … | forward to `/app/<page>` |
+| `/health`, `/api/v1/health` | platform healthcheck |
+| `/robots.txt` | disallows crawlers — this is an internal system |
+| `/favicon.ico` | 204, so browsers do not log a 404 |
+
 ### Leave (rule-based, with suggestions)
 
 Rules are configured per department or globally: `max_per_year`,

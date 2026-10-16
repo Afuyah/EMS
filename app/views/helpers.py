@@ -83,6 +83,19 @@ def current_user_id() -> int | None:
         return None
 
 
+def is_signed_in() -> bool:
+    """Whether the request carries a usable signed-in principal.
+
+    Used by the entry-point redirects, which must send a returning user to their
+    dashboard and a visitor to the sign-in page. Reads the principal the
+    ``before_request`` hook already resolved, so it costs no extra lookup.
+    """
+    try:
+        return getattr(g, "current_principal", None) is not None
+    except RuntimeError:  # no application context (should not happen in a view)
+        return False
+
+
 def render(template: str, **context: Any):
     """Render a template with the common layout context pre-filled."""
     context.setdefault("current_user", getattr(g, "current_principal", None))

@@ -123,6 +123,30 @@ check("rate limiting is not in memory",
 check("CORS origins are explicit", "*" not in ProductionConfig.CORS_ORIGINS,
       str(ProductionConfig.CORS_ORIGINS))
 
+print("\n=== 6. entry points answer (the bare domain must not 404) ===")
+# A production deployment is reached by typing its address, so the root and the
+# obvious short paths must not be dead ends. Built against the real production
+# config so a route that exists only in development is not mistaken for working.
+try:
+    from app import create_app
+
+    prod_app = create_app("production")
+    probe = prod_app.test_client()
+    for path, note in [
+        ("/", "the bare domain"),
+        ("/login", "the obvious sign-in URL"),
+        ("/logout", "the obvious sign-out URL"),
+        ("/health", "the platform healthcheck"),
+    ]:
+        response = probe.get(path, follow_redirects=False)
+        check(
+            f"{note} ({path}) does not 404",
+            response.status_code != 404,
+            str(response.status_code),
+        )
+except Exception as error:  # noqa: BLE001
+    check("the production app builds for a route probe", False, str(error))
+
 print(f"\n=== RESULT: {len(failures)} failure(s) ===")
 for failure in failures:
     print("  -", failure)

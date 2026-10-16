@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import Flask, g, jsonify, request
+from flask import Flask, g, jsonify, redirect, request, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_cors import CORS
 from flask_jwt_extended import verify_jwt_in_request
@@ -186,6 +186,83 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(hooks_bp)
     # The ZKTeco ADMS protocol the physical terminals speak.
     app.register_blueprint(iclock_bp)
+
+    # ------------------------------------------------------------------
+    # Friendly entry points.
+    #
+    # The UI lives under /app, so the bare domain and the obvious guesses
+    # (/login, /logout) would otherwise answer 404 — the first thing anyone
+    # typing the deployment's address sees. These are registered on the app
+    # itself because a blueprint's url_prefix would not produce these paths.
+    # ------------------------------------------------------------------
+    @app.get("/")
+    def _root():
+        from app.views.helpers import is_signed_in
+
+        if is_signed_in():
+            return redirect(url_for("views.dashboard"))
+        return redirect(url_for("views.login"))
+
+    @app.get("/login")
+    @app.get("/login/")
+    def _login_alias():
+        """Send ``/login`` to the real sign-in page, preserving ``?next=``."""
+        target = url_for("views.login", **request.args.to_dict(flat=True))
+        return redirect(target)
+
+    @app.get("/logout")
+    @app.get("/logout/")
+    def _logout_alias():
+        """Send ``/logout`` to the real sign-out route, which revokes tokens."""
+        return redirect(url_for("views.logout"))
+
+    # The UI is namespaced under /app, but people type the page name directly.
+    # These forward to the real view so an obvious URL is never a dead end.
+    _PAGE_ALIASES = {
+        "dashboard": "views.dashboard",
+        "attendance": "views.attendance",
+        "leave": "views.leave",
+        "employees": "views.employees",
+        "departments": "views.departments",
+        "devices": "views.devices",
+        "reports": "views.reports",
+        "rules": "views.rules",
+        "profile": "views.profile",
+        "notifications": "views.notifications",
+    }
+
+    def _page_alias(endpoint: str):
+        def _redirect_to_view():
+            return redirect(url_for(endpoint))
+
+        _redirect_to_view.__name__ = f"_alias_{endpoint.rsplit('.', 1)[-1]}"
+        return _redirect_to_view
+
+    for _slug, _endpoint in _PAGE_ALIASES.items():
+        app.add_url_rule(
+            f"/{_slug}",
+            endpoint=f"_alias_{_slug}",
+            view_func=_page_alias(_endpoint),
+            methods=["GET"],
+        )
+
+    @app.get("/robots.txt")
+    def _robots():
+        """Keep an internal HR system out of search engines."""
+        return app.response_class(
+            "User-agent: *\nDisallow: /\n",
+            mimetype="text/plain",
+        )
+
+    @app.get("/favicon.ico")
+    def _favicon():
+        """Answer the browser's automatic request instead of logging a 404.
+
+        204 rather than an icon: every page already declares the site's own
+        favicon, and returning "no content" is honest about there being none at
+        this path.
+        """
+        return app.response_class(status=204, mimetype="image/x-icon")
 
     @app.get("/api/v1/health")
     @app.get("/health")

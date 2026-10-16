@@ -331,6 +331,15 @@ curl https://<your-domain>/health
 
 A `503` here means the database is unreachable — check `DATABASE_URL`.
 
+### The bare domain works
+
+Open `https://<your-domain>/` in a browser. It should redirect to the sign-in
+page — or straight to your dashboard if already signed in. If it 404s, the
+running revision predates the entry-point routes.
+
+The short forms `/login` and `/logout` also work, so a link to the obvious URL is
+never a dead end.
+
 ### The worker is consuming the queue
 
 In the **worker** service logs you should see:
