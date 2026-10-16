@@ -48,6 +48,17 @@ class BiometricsController:
         """Verify device headers during ``before_request`` (no commit)."""
         return self.service.authenticate(serial_no, secret)
 
+    def authenticate_adms_device(self, serial_no: str, comm_key: str | None):
+        """Verify a device calling the ADMS endpoints.
+
+        Differs from :meth:`authenticate_device` in one way: a terminal whose
+        communication password was never set sends the factory value, and ADMS
+        has no other credential to offer, so that default is accepted here.
+        """
+        return self.service.authenticate(
+            serial_no, comm_key or "", allow_default_comm_key=True
+        )
+
     # ---- punch ingestion -------------------------------------------------
     def ingest_punch(self, *, device, payload: dict, raw_headers: dict | None = None):
         """Accept one punch and resolve it into attendance.

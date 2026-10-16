@@ -68,17 +68,19 @@ def _authenticate(serial_no: str, comm_key: str | None):
     """Resolve and authorise the calling device, or raise :class:`DeviceAuthError`.
 
     A device cannot send custom headers, so the credential arrives as the
-    ``CommKey`` form/query parameter — that is the only secret the hardware can
-    hold. An ``X-Device-Secret`` header is still honoured, because a bridge
-    process or a test harness can send one.
+    ``CommKey`` field — the only secret the hardware can hold. An
+    ``X-Device-Secret`` header is still honoured, because a bridge process or a
+    test harness can send one.
+
+    A terminal whose communication password was never set sends the factory
+    value, so that is accepted as well: refusing it would mean no attendance
+    data from a device that is otherwise working correctly.
     """
     header_secret = request.headers.get("X-Device-Secret")
     secret = header_secret or comm_key
     if not serial_no:
         raise DeviceAuthError("The device did not identify itself.")
-    if not secret:
-        raise DeviceAuthError("Device credentials are required.")
-    return _controller.authenticate_device(serial_no, secret)
+    return _controller.authenticate_adms_device(serial_no, secret)
 
 
 def _authenticate_or_refuse(serial_no: str, comm_key: str | None):
@@ -121,9 +123,10 @@ def handshake():
         return refusal
 
     logger.info(
-        "ADMS handshake SN=%s options=%s",
+        "ADMS handshake SN=%s options=%s commkey=%s",
         device.serial_no,
         request.args.get("options"),
+        "supplied" if comm_key else "absent",
     )
     return _plain(format_handshake(device.serial_no))
 

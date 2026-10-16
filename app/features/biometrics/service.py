@@ -75,13 +75,22 @@ class BiometricsService:
         self.raw_logs = raw_logs or RawLogRepository()
 
     # ---- device authentication ------------------------------------------
-    def authenticate(self, serial_no: str, secret: str) -> BiometricDevice:
+    def authenticate(
+        self, serial_no: str, secret: str, *, allow_default_comm_key: bool = False
+    ) -> BiometricDevice:
         """Verify device credentials; raises on any failure.
 
         An unknown serial and a wrong secret raise the *same* error so serials
         cannot be probed, and both answer 401 rather than leaking which part
         failed.
+
+        ``allow_default_comm_key`` additionally accepts the factory
+        communication key. ADMS is driven from a device keypad, and a terminal
+        whose communication password was never set sends ``0``; without this,
+        such a device could never push. It is opt-in so the JSON webhook keeps
+        requiring its real secret.
         """
+        from app.features.biometrics.constants import DEFAULT_COMM_KEY
         from app.features.biometrics.exceptions import DeviceCredentialsError
 
         device = self.devices.get_by_serial(serial_no)
@@ -89,7 +98,19 @@ class BiometricsService:
             logger.warning("device auth failed: unknown serial=%s", serial_no)
             raise DeviceCredentialsError("Device authentication failed.")
 
-        if not verify_device_secret(secret, device.secret_hash, salt=device.serial_no):
+        supplied = (secret or "").strip() or DEFAULT_COMM_KEY
+        matched = verify_device_secret(supplied, device.secret_hash, salt=device.serial_no)
+
+        if not matched and allow_default_comm_key and supplied == DEFAULT_COMM_KEY:
+            matched = True
+            logger.info(
+                "device %s authenticated with the factory CommKey; "
+                "rotate its secret and set the same value on the device to "
+                "move off the default",
+                device.serial_no,
+            )
+
+        if not matched:
             logger.warning("device auth failed: bad secret serial=%s", serial_no)
             raise DeviceCredentialsError("Device authentication failed.")
 
@@ -116,8 +137,16 @@ class BiometricsService:
 
     @staticmethod
     def generate_secret() -> str:
-        """A fresh shared secret, shown to the admin exactly once."""
-        return new_token(32)
+        """A fresh shared secret, shown to the admin exactly once.
+
+        Numeric and short, because the primary user of this value is a device
+        keypad: a ZKTeco terminal's "Comm Key" field accepts digits only, so an
+        alphanumeric token could never be entered on the hardware. Six digits is
+        also what the protocol's own ``CommKey`` parameter expects.
+        """
+        from app.core.security import new_device_comm_key
+
+        return new_device_comm_key(6)
 
     def register_device(
         self,

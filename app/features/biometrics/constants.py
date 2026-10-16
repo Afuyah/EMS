@@ -68,5 +68,15 @@ SIGNATURE_TOLERANCE_SECONDS = 300
 #: A device unseen for this long is considered offline.
 DEVICE_OFFLINE_AFTER_MINUTES = 30
 
+#: The factory value of a ZKTeco "Comm Key" / communication password.
+#:
+#: Devices ship with no communication password, and many installations never set
+#: one. Such a device sends ``CommKey=0`` (or omits the parameter entirely), so
+#: this is accepted as the shared secret. The trade-off is deliberate: an
+#: unattended terminal has no way to hold a stronger credential, and refusing it
+#: would mean no attendance data at all. Rotate the device's secret and set the
+#: same value on the device to move it off this default.
+DEFAULT_COMM_KEY = "0"
+
 #: Device health notification event.
 EVENT_DEVICE_OFFLINE = "device_offline"

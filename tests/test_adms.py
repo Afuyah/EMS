@@ -181,6 +181,27 @@ class TestVendorRegistry:
         assert DEFAULT_VENDOR == "zkteco"
 
 
+class TestCommKeyGeneration:
+    """The shared secret must be typeable on a device keypad."""
+
+    def test_generated_secret_is_numeric(self):
+        secret = BiometricsService.generate_secret()
+        assert secret.isdigit(), f"{secret!r} contains non-digits"
+
+    def test_generated_secret_is_six_digits(self):
+        for _ in range(50):
+            assert len(BiometricsService.generate_secret()) == 6
+
+    def test_registration_returns_a_numeric_comm_key(self):
+        secret = BiometricsService.generate_secret()
+        assert secret.isdigit() and len(secret) == 6
+
+    def test_the_default_comm_key_constant_is_the_factory_value(self):
+        from app.features.biometrics.constants import DEFAULT_COMM_KEY
+
+        assert DEFAULT_COMM_KEY == "0"
+
+
 # ---------------------------------------------------------------------------
 # The HTTP endpoints a device actually calls
 # ---------------------------------------------------------------------------
@@ -317,7 +338,12 @@ class TestIclockEndpoints:
             == 1
         )
 
-    def test_a_push_without_a_credential_is_refused(self, client, adms_device):
+    def test_a_push_with_the_factory_comm_key_is_accepted(self, client, adms_device):
+        """Devices ship with no communication password and send the factory key.
+
+        Refusing this would mean no attendance data from a working terminal, so
+        it is accepted deliberately. Rotating the secret moves a device off it.
+        """
         body = urlencode(
             {
                 "SN": adms_device["device"].serial_no,
@@ -330,8 +356,42 @@ class TestIclockEndpoints:
             data=body,
             content_type="application/x-www-form-urlencoded",
         )
+        assert response.status_code == 200
+        assert response.get_data(as_text=True) == REPLY_OK
+
+    def test_a_wrong_comm_key_is_still_refused(self, client, adms_device):
+        """The default is allowed; anything else must not be."""
+        body = urlencode(
+            {
+                "SN": adms_device["device"].serial_no,
+                "table": "ATTLOG",
+                "CommKey": "999999",
+                "data": "1\t2026-03-05 08:00:00\t0\n",
+            }
+        )
+        response = client.post(
+            "/iclock/cdata",
+            data=body,
+            content_type="application/x-www-form-urlencoded",
+        )
         assert response.status_code == 401
         assert response.headers["Content-Type"].startswith("text/plain")
+
+    def test_the_configured_comm_key_is_also_accepted(self, client, adms_device):
+        body = urlencode(
+            {
+                "SN": adms_device["device"].serial_no,
+                "table": "ATTLOG",
+                "CommKey": adms_device["secret"],
+                "data": "1\t2026-03-05 08:30:00\t0\n",
+            }
+        )
+        response = client.post(
+            "/iclock/cdata",
+            data=body,
+            content_type="application/x-www-form-urlencoded",
+        )
+        assert response.get_data(as_text=True) == REPLY_OK
 
     def test_an_inactive_device_cannot_push(self, client, adms_device):
         service = BiometricsService()

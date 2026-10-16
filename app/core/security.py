@@ -56,6 +56,19 @@ def new_csrf_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def new_device_comm_key(digits: int = 6) -> str:
+    """A numeric communication key a device keypad can actually accept.
+
+    ZKTeco terminals are configured from a numeric keypad, and the "Comm Key"
+    (some firmware calls it the communication password) is a *number* — usually
+    limited to a handful of digits. A long alphanumeric token cannot be typed
+    in, so the shared secret for ADMS push devices must be numeric.
+
+    Leading zeros are preserved because the value is returned as a string.
+    """
+    return "".join(secrets.choice("0123456789") for _ in range(digits))
+
+
 def hash_device_secret(secret: str, *, salt: str = "") -> str:
     """Hash a biometric device shared secret (salted with the device serial)."""
     digest = hashlib.sha256()
