@@ -1,4 +1,4 @@
-﻿"""Live check: annual plan generation, publish, employee visibility, recall."""
+"""Live check: annual plan generation, publish, employee visibility, recall."""
 
 from __future__ import annotations
 
@@ -59,14 +59,13 @@ with app.app_context():
         entitled = rules.annual_entitlement(
             department_id=employee.department_id, leave_type=LeaveType.ANNUAL
         )
-        balance = balances.get_scope(
-            employee_id=employee_id, year=year, leave_type=LeaveType.ANNUAL.value
+        balance = balances.get_or_create(
+            employee_id=employee_id,
+            year=year,
+            leave_type=LeaveType.ANNUAL.value,
+            entitled=entitled,
         )
-        if balance is None:
-            balances.create_balance(
-                employee_id=employee_id, year=year,
-                leave_type=LeaveType.ANNUAL.value, entitled=entitled,
-            )
+        balance.entitled = max(balance.entitled, entitled)
     db.session.commit()
 
     print("\n=== generate a draft roster ===")

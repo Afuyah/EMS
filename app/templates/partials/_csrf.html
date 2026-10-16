@@ -1,0 +1,65 @@
+{#
+  Double-submit the CSRF token on every form.
+
+  Flask-JWT-Extended pairs the access cookie with a CSRF value and rejects any
+  cookie-authenticated write that does not present both. HTMX requests carry it
+  in the `X-CSRF-TOKEN` header (set on <body> via hx-headers), but a plain
+  `method="post"` form sends nothing, so the check fails and the user is bounced
+  to the sign-in page — which looks like being logged out at random.
+
+  Rather than hand-editing dozens of forms, inject a hidden field into every
+  POST form. This runs on DOMContentLoaded and again after any HTMX swap, so
+  forms that arrive by HTMX are covered too.
+
+  HTML provides no "form submitted" event to cancel a native submission, so the
+  reliable approach is to refresh the field on every DOM change. That keeps the
+  value current across page loads with no stale-token failures.
+
+  NOTE: this block must NOT be wrapped in {% raw %}. The token below has to be
+  interpolated at render time; a raw block would emit the Jinja expression
+  verbatim and produce a JavaScript syntax error, silently breaking every form.
+#}
+<script>
+  (function () {
+    var TOKEN = {{ csrf_token|tojson }};
+    var FIELD = "csrf_token";
+
+    function stampForms(root) {
+      if (!TOKEN) return;
+      var scope = root && root.querySelectorAll ? root : document;
+      var forms = scope.querySelectorAll('form');
+      for (var i = 0; i < forms.length; i++) {
+        var form = forms[i];
+        var method = (form.getAttribute('method') || 'get').toLowerCase();
+        if (method !== 'post') continue;
+        var input = form.querySelector('input[name="' + FIELD + '"]');
+        if (!input) {
+          input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = FIELD;
+          form.appendChild(input);
+        }
+        // Always rewrite: a token from a previous page load would be stale.
+        input.value = TOKEN;
+      }
+    }
+
+    function refresh() {
+      stampForms(document);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', refresh);
+    } else {
+      refresh();
+    }
+
+    // Cover forms that appear after an HTMX swap, and re-stamp on any DOM
+    // change so a long-lived page never submits an expired token.
+    document.addEventListener('htmx:afterSwap', refresh);
+    document.addEventListener('htmx:afterSettle', refresh);
+    document.addEventListener('change', refresh, true);
+    document.addEventListener('focusin', refresh, true);
+    document.addEventListener('submit', refresh, true);
+  })();
+</script>

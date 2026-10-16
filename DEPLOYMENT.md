@@ -231,14 +231,16 @@ Normally the `preDeployCommand` runs migrations for you. If it did not — or yo
 want to be certain — run all three steps in the **web** service shell:
 
 ```bash
-# 1. create the schema
-flask --app wsgi db upgrade
+flask --app wsgi db upgrade        # 1. create the schema
+flask --app wsgi seed-defaults     # 2. shift policy + rule ladders (no accounts)
+flask --app wsgi create-admin --email you@yourdomain.com   # 3. your account
+```
 
-# 2. global shift policy + default rule ladders (production-safe, repeatable)
-flask --app wsgi seed-defaults
+That is the entire bootstrap. The last command prompts for a password twice
+(hidden). To confirm it worked:
 
-# 3. your administrator account (prompts for a password)
-flask --app wsgi create-admin --email you@yourdomain.com
+```bash
+curl -s localhost:$PORT/health     # {"status":"ok","database":"up"}
 ```
 
 ### Why step 2 matters

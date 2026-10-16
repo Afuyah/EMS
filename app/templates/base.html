@@ -35,6 +35,7 @@
 <body class="h-full font-sans text-slate-800 antialiased"
       hx-headers='{"X-CSRF-TOKEN": "{{ csrf_token or '' }}"}'>
   {% block body %}{% endblock %}
+  {% include "partials/_csrf.html" %}
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>

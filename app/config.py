@@ -209,6 +209,11 @@ class ProductionConfig(BaseConfig):
     DEBUG = False
     TESTING = False
     JWT_COOKIE_CSRF_PROTECT = True
+    # The HTML interface is ordinary server-rendered forms, which cannot send a
+    # custom header. Accept the token as a form field as well, so the hidden
+    # input the templates inject is actually honoured. Without this, every
+    # non-HTMX POST would fail verification and bounce the user to sign-in.
+    JWT_CSRF_CHECK_FORM = True
     JWT_COOKIE_SECURE = _env_bool("JWT_COOKIE_SECURE", True)
     JWT_COOKIE_SAMESITE = "Strict"
     CORS_ORIGINS = _env_list("CORS_ORIGINS")

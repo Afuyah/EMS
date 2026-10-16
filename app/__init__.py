@@ -49,6 +49,7 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     _register_jwt(app)
     _register_request_hooks(app)
     _register_blueprints(app)
+    _register_template_globals(app)
     _register_cli(app)
 
     if app.config.get("TESTING"):
@@ -200,6 +201,29 @@ def _register_blueprints(app: Flask) -> None:
         if wants_json():
             return jsonify(payload), status
         return jsonify(payload), status
+
+
+def _register_template_globals(app: Flask) -> None:
+    """Expose the CSRF token to every template as a ready-to-use string.
+
+    In production ``JWT_COOKIE_CSRF_PROTECT`` is on, so Flask-JWT-Extended
+    requires the access cookie and its matching CSRF value to arrive together on
+    every write. The templates emit that value into an ``X-CSRF-TOKEN`` header
+    for HTMX, so it must be a **value**, not a callable: the templates use
+    ``{{ csrf_token or '' }}`` rather than ``{{ csrf_token() }}``.
+
+    Registering this as a Jinja *global* would expose the function itself and
+    render its repr into the header, so it is a context processor instead.
+
+    Without it the header renders empty. Every POST then fails CSRF
+    verification with a 401 and the user is bounced to the sign-in page — which
+    looks exactly like being logged out on every action.
+    """
+    from app.features.auth.jwt_callbacks import current_csrf_token
+
+    @app.context_processor
+    def _inject_csrf_token():
+        return {"csrf_token": current_csrf_token()}
 
 
 def _register_cli(app: Flask) -> None:

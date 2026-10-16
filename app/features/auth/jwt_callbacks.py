@@ -93,6 +93,30 @@ def clear_auth_cookies(response):
     return response
 
 
+def current_csrf_token() -> str:
+    """The CSRF token matching the request's access cookie, or ``""``.
+
+    Flask-JWT-Extended requires a double submit on cookie-authenticated writes:
+    the access cookie plus the same token's CSRF value. It keeps that value in
+    the JWT's ``csrf`` claim and mirrors it into a readable cookie, so the
+    templates can hand it back in an ``X-CSRF-TOKEN`` header.
+
+    Note ``flask_jwt_extended.get_csrf_token`` is **not** usable here: it takes
+    the encoded token as an argument rather than reading the current request.
+    The claim is the same value, already decoded for us.
+
+    This must never raise. It runs while rendering every page, including the
+    sign-in page and any page loaded without a token, where there is simply no
+    CSRF value yet — an empty string is the correct answer there.
+    """
+    try:
+        from flask_jwt_extended import get_jwt
+
+        return get_jwt().get("csrf", "")
+    except Exception:  # noqa: BLE001 - no token in play means no CSRF value
+        return ""
+
+
 # ---------------------------------------------------------------------------
 # Flask-JWT-Extended hooks
 # ---------------------------------------------------------------------------
