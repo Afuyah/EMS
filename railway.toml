@@ -20,10 +20,15 @@ startCommand = "/app/docker-entrypoint.sh web"
 # instead of sending traffic to a broken release.
 healthcheckPath = "/health"
 healthcheckTimeout = 120
+# Migrations run once per deploy, before the new container takes traffic.
+# The entrypoint ALSO runs them when the schema is missing entirely, so a first
+# deploy cannot come up against an empty database even if this is not honoured.
 preDeployCommand = "/app/docker-entrypoint.sh release"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 
-[deploy.resources]
-# The web service is light; scale here rather than raising the plan.
-replicas = 1
+# NOTE: replica counts are intentionally not set here. Railway's config schema
+# does not accept a `replicas` key under [deploy.resources]; an invalid file can
+# cause the whole railway.toml to be ignored, which would silently drop
+# preDeployCommand. Set replica counts in the dashboard instead (and keep `beat`
+# at exactly 1).

@@ -126,41 +126,28 @@ SAMPLE_PEOPLE: tuple[tuple[str, str, str, str, str], ...] = (
 )
 
 
-def seed_minimal() -> dict:
-    """Create the admin login plus the global rules and shift policy.
+def seed_defaults() -> dict:
+    """Create the global shift policy and the default rule ladders.
 
-    The seeded administrator uses a published default password, so this refuses
-    to run in production.  Use ``flask create-admin`` there instead.
+    **Production-safe and idempotent.**  No accounts are created here, so this
+    is the command a fresh deployment runs to get a working rule set:
+
+        flask --app wsgi seed-defaults
+
+    Without it a production install has no shift policy, no colour ladder and no
+    leave rules, so attendance would never be classified and every leave request
+    would be rejected for a missing rule.
     """
-    import os as _os
-
-    if _os.getenv("FLASK_CONFIG", "").strip().lower() == "production":
-        raise RuntimeError(
-            "seed_minimal creates an account with a well-known default password "
-            "and must not run in production. Use 'flask create-admin "
-            "--email you@example.com' instead."
-        )
-
     created: dict[str, list] = {
-        "users": [],
-        "departments": [],
         "policies": [],
         "leave_rules": [],
         "color_rules": [],
         "disciplinary_rules": [],
     }
 
-    auth = AuthService()
-    if auth.get_by_email(ADMIN_EMAIL) is None:
-        auth.create_user(
-            email=ADMIN_EMAIL, password=ADMIN_PASSWORD, role=Role.ADMIN
-        )
-        created["users"].append(ADMIN_EMAIL)
-
     # Global shift policy: 09:00-17:00 with a 10 minute grace period.
     policies = AttendancePolicyService()
-    existing_global = policies.get_global()
-    if existing_global is None:
+    if policies.get_global() is None:
         policies.upsert(
             department_id=None,
             shift_start=time(9, 0),
@@ -171,8 +158,7 @@ def seed_minimal() -> dict:
 
     rules = LeaveRulesService()
     for spec in LEAVE_LADDER:
-        existing = rules.rules.find(department_id=None, leave_type=spec["leave_type"])
-        if existing is None:
+        if rules.rules.find(department_id=None, leave_type=spec["leave_type"]) is None:
             rules.create_rule(department_id=None, **spec)
             created["leave_rules"].append(spec["leave_type"])
 
@@ -187,6 +173,38 @@ def seed_minimal() -> dict:
         for spec in DISCIPLINARY_LADDER:
             disciplinary.create_rule(department_id=None, **spec)
             created["disciplinary_rules"].append(spec["action"])
+
+    db.session.commit()
+    logger.info("seed_defaults created=%s", {k: len(v) for k, v in created.items()})
+    return created
+
+
+def seed_minimal() -> dict:
+    """Create the admin login **and** the global defaults.
+
+    Development convenience only: the admin it creates uses a published default
+    password, so this refuses to run in production.  Use ``seed-defaults`` for
+    the rules and ``create-admin`` for the account there.
+    """
+    import os as _os
+
+    if _os.getenv("FLASK_CONFIG", "").strip().lower() == "production":
+        raise RuntimeError(
+            "seed_minimal creates an account with a well-known default password "
+            "and must not run in production. Use 'flask seed-defaults' for the "
+            "rules and 'flask create-admin --email you@example.com' for the "
+            "account instead."
+        )
+
+    created = seed_defaults()
+    created.setdefault("users", [])
+
+    auth = AuthService()
+    if auth.get_by_email(ADMIN_EMAIL) is None:
+        auth.create_user(
+            email=ADMIN_EMAIL, password=ADMIN_PASSWORD, role=Role.ADMIN
+        )
+        created["users"].append(ADMIN_EMAIL)
 
     db.session.commit()
     logger.info("seed_minimal created=%s", {k: len(v) for k, v in created.items()})

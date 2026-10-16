@@ -37,9 +37,24 @@ def register_cli(app: Flask) -> None:
         click.echo(json.dumps(created, indent=2, default=str))
         click.secho("Seed complete.", fg="green")
 
+    @app.cli.command("seed-defaults")
+    def seed_defaults_command() -> None:
+        """Create the global shift policy and default rule ladders.
+
+        Safe to run in production and safe to run repeatedly: it creates only
+        what is missing and no accounts at all. A fresh production database needs
+        this, or attendance is never classified and every leave request is
+        rejected for a missing rule.
+        """
+        from app.seed import seed_defaults
+
+        created = seed_defaults()
+        click.echo(json.dumps(created, indent=2, default=str))
+        click.secho("Defaults seeded.", fg="green")
+
     @app.cli.command("seed-minimal")
     def seed_minimal_command() -> None:
-        """Seed the admin user and global rules only."""
+        """Seed the admin user and global rules (development only)."""
         from app.seed import seed_minimal
 
         created = seed_minimal()

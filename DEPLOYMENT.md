@@ -221,13 +221,70 @@ so this is safe on every deploy.
 
 ---
 
-## 10. Create the first administrator
+## 10. First-run bootstrap (do this before creating any account)
+
+A brand-new database is **empty**. Migrations must run before anything else,
+and the default rule ladders must exist before attendance or leave will work.
+If you skip this you will see `relation "users" does not exist`.
+
+Normally the `preDeployCommand` runs migrations for you. If it did not — or you
+want to be certain — run all three steps in the **web** service shell:
+
+```bash
+# 1. create the schema
+flask --app wsgi db upgrade
+
+# 2. global shift policy + default rule ladders (production-safe, repeatable)
+flask --app wsgi seed-defaults
+
+# 3. your administrator account (prompts for a password)
+flask --app wsgi create-admin --email you@yourdomain.com
+```
+
+### Why step 2 matters
+
+`seed-defaults` creates the configuration the app assumes exists:
+
+| Creates | Without it |
+| --- | --- |
+| Global shift policy (09:00–17:00, 10 min grace) | Attendance is never classified as late or on time |
+| Leave rules (annual 21, sick 14, maternity 90, paternity 14, unpaid) | Every leave request is rejected for a missing rule |
+| Attendance colour ladder (green/yellow/orange/red) | The badge never escalates |
+| Disciplinary rules | No warnings or suspensions are ever raised |
+
+It creates **no accounts**, is safe in production, and is idempotent — running it
+again changes nothing. `flask seed` and `flask seed-minimal` still refuse to run
+in production because they create `admin@ems.local` with a published password.
+
+> **A fresh deployment therefore needs exactly three commands**: `db upgrade`,
+> `seed-defaults`, `create-admin`. Everything else is optional.
+
+### If migrations never ran automatically
+
+Check the deploy log for the `release` step. Two common causes:
+
+1. **`preDeployCommand` was not honoured.** It runs as a separate step before the
+   container starts. Confirm it appears in the deploy log; if not, run
+   `flask --app wsgi db upgrade` manually as above.
+2. **An invalid `railway.toml`.** Railway ignores the whole file if any key is
+   wrong, silently dropping `preDeployCommand`. The committed file is valid;
+   note that replica counts are deliberately *not* set there (set them in the
+   dashboard) because `[deploy.resources] replicas` is not part of the schema.
+
+Since v1.0 the container also **self-heals**: on start, `web` and `worker` check
+for the `alembic_version` table and run migrations themselves if the schema is
+missing entirely. So a truly empty database now bootstraps on first deploy
+rather than failing every request. `seed-defaults` is still a separate step.
+
+---
+
+## 11. Create the first administrator
 
 **Do not run `flask seed` in production.** It creates `admin@ems.local` with the
 published default password `ChangeMe123!`. For that reason
-`seed`/`seed-minimal` now **refuse to run when `FLASK_CONFIG=production`**.
+`seed`/`seed-minimal` **refuse to run when `FLASK_CONFIG=production`**.
 
-Create a real administrator instead. Open the **web** service → **Shell**:
+Create a real administrator instead (step 3 above):
 
 ```bash
 flask --app wsgi create-admin --email you@yourdomain.com
@@ -261,7 +318,7 @@ is available to them.
 
 ---
 
-## 11. Verify the deployment
+## 12. Verify the deployment
 
 ### The app answers
 
@@ -336,7 +393,7 @@ LIMIT 20;
 
 ---
 
-## 12. The nightly schedule, for reference
+## 13. The nightly schedule, for reference
 
 | Job | Schedule (`DEFAULT_TIMEZONE`) | What it does |
 | --- | --- | --- |
@@ -353,7 +410,7 @@ so a shift ending at midnight is still settled before the next morning.
 
 ---
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 **`ModuleNotFoundError: No module named 'psycopg'`**
 
@@ -411,7 +468,7 @@ have it too, since email delivery happens there).
 
 ---
 
-## 14. Scaling notes
+## 15. Scaling notes
 
 * **Scale `web`** by raising replicas. Sessions are JWT cookies, so no sticky
   sessions are needed.

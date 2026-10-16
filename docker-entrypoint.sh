@@ -46,6 +46,68 @@ if [ "$ROLE" = "worker" ] || [ "$ROLE" = "beat" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Bootstrap guard.
+#
+# A first deploy can come up against a completely empty database — for example
+# if `preDeployCommand` is not honoured. Every request would then fail with
+# `relation "users" does not exist`, which is a confusing way to discover a
+# missing migration.
+#
+# So: if the schema has never been created, create it here. This is a no-op on
+# every later start because alembic_version exists by then. Migrations are
+# idempotent, so there is no risk of double-applying.
+# ---------------------------------------------------------------------------
+schema_check() {
+  python - <<'PY'
+import os
+import sys
+
+import psycopg2
+
+url = os.environ.get("DATABASE_URL", "")
+if not url:
+    sys.exit(1)
+
+# Accept every URL form a platform may hand us.
+url = url.replace("postgresql+psycopg2://", "postgresql://", 1)
+url = url.replace("postgresql+psycopg://", "postgresql://", 1)
+
+try:
+    connection = psycopg2.connect(url, connect_timeout=10)
+except Exception as error:  # noqa: BLE001
+    print(f"[entrypoint] cannot reach the database: {error}", file=sys.stderr)
+    sys.exit(2)
+
+try:
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT to_regclass('public.alembic_version')")
+        present = cursor.fetchone()[0] is not None
+finally:
+    connection.close()
+
+# 0 = schema present, 10 = schema missing
+sys.exit(0 if present else 10)
+PY
+}
+
+if [ "$ROLE" = "web" ] || [ "$ROLE" = "worker" ]; then
+  set +e
+  schema_check
+  schema_status=$?
+  set -e
+
+  if [ "$schema_status" -eq 10 ]; then
+    log "database schema is missing; applying migrations before start"
+    python -m flask --app wsgi db upgrade
+    log "migrations applied"
+  elif [ "$schema_status" -eq 2 ]; then
+    log "WARNING: database unreachable at start; starting anyway and retrying"
+  else
+    log "database schema present"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Release task: apply migrations. Safe to run on every deploy because Alembic
 # records the revision and skips anything already applied.
 # ---------------------------------------------------------------------------
