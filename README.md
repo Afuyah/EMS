@@ -210,8 +210,21 @@ standard function. Point the device at your domain:
 | Device menu field | Value |
 | --- | --- |
 | Server Address | the domain, without `https://` |
-| Server Port | `443` |
-| Comm Key | the device secret, shown once at registration |
+| Server Port | `443` (plain `80` also works) |
+| Comm Key | the six-digit number shown when you register the device |
+
+The Comm Key is **not issued by the device** — it is a shared secret this system
+generates at registration, which you type into both sides. It is numeric and six
+digits because a device keypad accepts digits only. It is shown once (stored
+hashed); to recover, rotate the secret and set the new number on the device.
+
+A terminal whose communication password was never set sends the factory value
+and is still accepted, because ADMS offers it no stronger credential and
+refusing it would mean no attendance data. Rotating the secret moves a device
+off that default.
+
+`/iclock/ping` returning `OK` only proves the server is reachable — a device is
+marked online only after it authenticates successfully.
 
 | Method | Path | Purpose |
 | --- | --- | --- |

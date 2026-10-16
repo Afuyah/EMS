@@ -428,18 +428,34 @@ deployment directly — no local PC or SDK bridge.
 
 ### What to type into the device
 
-Register the device first on **Devices** in the app. The page then shows the
-exact values to enter; they are:
+Register the device first on **Devices** in the app. Registering (or rotating)
+shows a **Comm Key** — a six-digit number. That number is the credential, and it
+is shown **once**; it is stored hashed.
 
 | Device menu field | Value |
 | --- | --- |
 | Server Address | your Railway domain, **without** `https://`, e.g. `kenems.up.railway.app` |
-| Server Port | `443` |
-| Comm Key | the device's secret, shown once when you register it |
+| Server Port | `443` (plain `80` also works) |
+| Comm Key | the six-digit number shown when you registered the device |
 
 The menu path varies by firmware — usually **Menu → Comm. → Cloud Server
-Setting** or **ADMS**. The device's own serial number (Menu → Info → Device
-Serial Number) must match the one you registered.
+Setting**, **ADMS**, or **Communication Password**. The device's own serial
+number (Menu → Info → Device Serial Number) must match the one you registered
+**exactly** — it is case-sensitive.
+
+**Where the Comm Key comes from.** It is not issued by the device. It is a
+shared secret this system generates when you register the device, and you type
+the same value into both sides. It is deliberately **numeric and six digits**
+because a terminal's keypad accepts digits only — a long alphanumeric token
+could not be entered on the hardware.
+
+**If you lose it:** the value cannot be recovered (only its hash is stored).
+Rotate the device's secret in the app and set the new number on the device.
+
+**If your device has no communication password set**, leave it at the factory
+value. It will still be accepted — that is how most terminals ship, and refusing
+it would mean no attendance data at all. To move a device off that default,
+rotate the secret and type the new number in.
 
 ### Check reachability before touching the device
 
@@ -450,6 +466,29 @@ curl https://<your-domain>/iclock/ping
 
 That endpoint is deliberately unauthenticated and exposes nothing, so you can
 confirm the path from a browser on the same network as the device.
+
+> **`/iclock/ping` returning OK does not mean the device is connected.** It only
+> proves the server is reachable. A device shows as online only once it has
+> successfully *authenticated* — a rejected device is never marked seen.
+
+### Confirm the server side works before blaming the device
+
+```bash
+python tools/simulate_device.py https://<your-domain> <SERIAL> <COMM_KEY>
+```
+
+It makes the device's exact call sequence. If it reports `all calls succeeded`,
+the endpoint and credentials are good and any remaining problem is the device's
+own configuration. If it fails, the server or the credentials are at fault.
+
+### Check whether the device is reaching us at all
+
+Filter the **web** service logs for `ADMS`:
+
+* `ADMS request refused SN=... path=/iclock/cdata` — the device **is** connecting;
+  its serial or Comm Key is wrong.
+* `ADMS handshake SN=...` — the device authenticated and will start pushing.
+* Nothing at all — the device is not reaching the server.
 
 ### How it works
 
@@ -484,10 +523,12 @@ The `/iclock` routes exist for exactly these reasons and should be left open
 | Symptom | Cause |
 | --- | --- |
 | Device shows "connect failed" | No internet on the device's network, or the address still has `https://` in it |
+| Device shows **offline** but `/iclock/ping` is OK | Ping needs no credentials and marks nothing seen. The device has not authenticated — check its Comm Key |
 | `/iclock/ping` works but no data | The serial number on the device does not match the registered one |
 | Punches arrive, no attendance rows | The device's user ID is not mapped — use **Devices → map** |
-| Works on HTTP but not HTTPS | Older firmware only supports HTTP on port 80 and needs a firmware update |
-| Everything refused with 401 | Wrong `Comm Key`, or the device was deactivated |
+| Works on HTTP but not HTTPS | Older firmware only supports HTTP on port 80; plain `http://` on 80 also works here |
+| Everything refused with 401 | Wrong Comm Key, or the device was deactivated |
+| Lost the Comm Key | It cannot be recovered (only its hash is stored). Rotate the secret and set the new number on the device |
 
 ## 15. Troubleshooting
 
