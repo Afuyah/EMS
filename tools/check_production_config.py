@@ -78,6 +78,32 @@ try:
 except Exception as error:  # noqa: BLE001
     check("validate() passes with strong settings", False, str(error))
 
+print("\n=== 4b. a bare managed-platform DATABASE_URL is accepted ===")
+# Railway hands over ``postgresql://...`` with no driver. SQLAlchemy would
+# resolve that to psycopg 3, which is not installed, so the config must
+# normalise it onto psycopg2 rather than pass it through.
+from app.config import normalise_database_url  # noqa: E402
+
+for raw, note in [
+    ("postgresql://u:p@h:5432/db", "Railway's bare form"),
+    ("postgres://u:p@h:5432/db", "Heroku's legacy form"),
+]:
+    os.environ["DATABASE_URL"] = raw
+    accepted = True
+    detail = ""
+    try:
+        ProductionConfig.validate()
+    except Exception as error:  # noqa: BLE001
+        accepted = False
+        detail = str(error)
+    normalised = normalise_database_url(raw)
+    check(
+        f"{note} is accepted and pinned to psycopg2",
+        accepted and normalised.startswith("postgresql+psycopg2://"),
+        detail or normalised[:50],
+    )
+os.environ["DATABASE_URL"] = "postgresql+psycopg2://u:p@127.0.0.1:5432/db"
+
 print("\n=== 5. production hardening (JWT cookies, not Flask sessions) ===")
 from app.config import ProductionConfig
 

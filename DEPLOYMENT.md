@@ -146,6 +146,14 @@ a certificate error. It is harmless to set even for a plain `redis://` URL, and
 it only relaxes certificate *verification for the Redis connection inside
 Railway's private network* — it does not affect HTTPS to your users.
 
+**`DATABASE_URL` needs no editing.** Railway provides a bare
+`postgresql://...` with no driver, which SQLAlchemy 2.x would resolve to
+psycopg 3 — a package this project does not install, causing
+`ModuleNotFoundError: No module named 'psycopg'` at startup. The config
+normalises any PostgreSQL URL (`postgres://`, `postgresql://`, or an explicit
+driver) onto the `psycopg2` driver that `psycopg2-binary` provides, so the value
+Railway gives you works as-is. `python tools/check_database_url.py` verifies it.
+
 ### Build and deploy settings
 
 The repo already contains `railway.toml`, which sets the Dockerfile builder, the
@@ -347,8 +355,35 @@ so a shift ending at midnight is still settled before the next morning.
 
 ## 13. Troubleshooting
 
+**`ModuleNotFoundError: No module named 'psycopg'`**
+
+This was a real failure on first deploy. Railway supplies a bare
+`postgresql://...` with no driver, and SQLAlchemy 2.x resolves that to **psycopg
+3**, which this project does not install — it ships `psycopg2-binary`.
+
+The config now normalises every PostgreSQL URL form onto `psycopg2`, so the
+value Railway gives you works unchanged. If you still see this error, the
+running revision predates the fix — redeploy. Verify locally with:
+
+```bash
+python tools/check_database_url.py
+```
+
 **`Invalid production configuration: SECRET_KEY must be set...`**
 The app refuses to boot with a weak or missing secret. Generate one and redeploy.
+
+**`/usr/bin/env: 'bash\r': No such file or directory`**
+`docker-entrypoint.sh` was committed with CRLF line endings, so Linux reads the
+shebang as `bash\r`. Fix it once and permanently:
+
+```bash
+printf '*.sh text eol=lf\n' >> .gitattributes
+git add --renormalize .
+git commit -m "Normalise shell script line endings"
+git push
+```
+
+Check with `git ls-files --eol docker-entrypoint.sh` — you want `i/lf w/lf`.
 
 **`CORS_ORIGINS cannot contain '*' in production`**
 Deliberate. Set the exact public origin, including the scheme.

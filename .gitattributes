@@ -1,0 +1,42 @@
+# Normalise line endings in the repository.
+#
+# This matters for one file above all others: docker-entrypoint.sh runs under
+# Linux. If it is committed with CRLF, the kernel reads the shebang as
+# "#!/usr/bin/env bash\r" and every service fails to start with
+# "/usr/bin/env: 'bash\r': No such file or directory".
+#
+# The container is built from the repository contents, so what is *stored* is
+# what matters, not what a Windows checkout looks like.
+* text=auto
+
+# Shell and container files must be LF, always, on every platform.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.dockerfile    text eol=lf
+.dockerignore   text eol=lf
+*.toml          text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.ini           text eol=lf
+*.cfg           text eol=lf
+*.mako          text eol=lf
+
+# Python and docs: LF too, so diffs stay clean across platforms.
+*.py            text eol=lf
+*.txt           text eol=lf
+*.md            text eol=lf
+*.html          text eol=lf
+*.css           text eol=lf
+*.js            text eol=lf
+*.json          text eol=lf
+
+# Binary assets must never be touched.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.webp          binary
+*.woff          binary
+*.woff2         binary
+*.ttf           binary

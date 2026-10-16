@@ -58,6 +58,17 @@ else:
     if not ok:
         failures.append(f"nightly-attendance is at {hour}:{minute}, expected 2:0")
 
+print("\n=== broker reachability ===")
+try:
+    # Opens (and reuses) a connection to Redis. This is the check that proves the
+    # worker and beat will be able to talk to the broker.
+    with celery.connection_for_write() as connection:
+        connection.ensure_connection(max_retries=2, timeout=5)
+        print(f"  [ok  ] connected to the broker ({connection.as_uri().split('@')[-1]})")
+except Exception as error:  # noqa: BLE001 - the message is the point
+    print(f"  [FAIL] cannot reach the broker: {type(error).__name__}: {str(error)[:120]}")
+    failures.append("broker unreachable")
+
 print("\n=== task registration ===")
 jobs = sorted(t for t in celery.tasks if t.startswith("app.jobs"))
 print(f"  registered app.jobs tasks: {len(jobs)}")
