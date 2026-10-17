@@ -322,6 +322,30 @@ Every transition writes a row to `leave_request_history`, and notifications are
 enqueued best-effort — a notification failure never poisons the leave
 transaction.
 
+### Schema drift and punch durability
+
+A deploy that lands before its migration is this app's most confusing failure:
+queries touching a new column fail, and the symptom appears far from the cause —
+a punch that is "not recorded", or *"The correction could not be saved."*
+
+Two defences:
+
+* The app **logs** a loud error at startup when the database is behind the models,
+  then keeps running. A process that can serve sign-in and the health probe is
+  more useful than a crash loop.
+* `flask check-schema` names the gap and exits non-zero:
+
+  ```
+  MISSING COLUMNS — the code expects these
+    attendance_daily.sessions
+  The database is behind the code. Run: flask --app wsgi db upgrade
+  ```
+
+A punch is **evidence**, so it is committed *before* attendance is resolved. If a
+later step fails, the punch is kept and left `processed = false` rather than
+discarded with the transaction, and `flask reprocess-punches` completes it once
+the cause is fixed. That command is idempotent.
+
 ### Attendance resolution
 
 A day is a **sequence of sessions**, not a single clock-in/clock-out pair. An

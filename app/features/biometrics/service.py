@@ -303,13 +303,19 @@ class BiometricsService:
             idempotency_hash=punch_hash,
         )
         if not created:
+            # Return the existing row rather than None. A device retrying a punch
+            # whose attendance resolution failed must be able to resume it, and
+            # the caller needs the row to know whether that work is still
+            # outstanding.
+            existing = self.raw_logs.get_by_hash(punch_hash)
             logger.info(
-                "duplicate punch ignored serial=%s user=%s at=%s",
+                "duplicate punch serial=%s user=%s at=%s (processed=%s)",
                 device.serial_no,
                 parsed.device_user_id,
                 parsed.punch_time,
+                bool(existing and existing.processed),
             )
-            return None, None, False, "duplicate"
+            return None, existing, False, "duplicate"
 
         mapping = self.maps.resolve(
             device_id=device.id, device_user_id=parsed.device_user_id

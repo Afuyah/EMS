@@ -51,6 +51,7 @@ def create_app(config_name: str | None = None, **overrides) -> Flask:
     _register_blueprints(app)
     _register_template_globals(app)
     _register_cli(app)
+    _warn_if_schema_is_stale(app)
 
     if app.config.get("TESTING"):
         # Keep test runs quiet and deterministic.
@@ -307,6 +308,46 @@ def _register_template_globals(app: Flask) -> None:
     @app.context_processor
     def _inject_csrf_token():
         return {"csrf_token": current_csrf_token()}
+
+
+def _warn_if_schema_is_stale(app: Flask) -> None:
+    """Log loudly when the database is behind the code.
+
+    A deploy that lands before its migration is the most confusing failure this
+    app can produce. Every query touching the new column fails, and the error
+    surfaces far from its cause — a punch that is simply "not recorded", or
+    "The correction could not be saved" — with nothing pointing at the schema.
+
+    This never raises: a deployment must still start, because a running process
+    that can serve the sign-in page and the health probe is far more useful than
+    a crash loop. It only makes the cause impossible to miss in the logs.
+
+    Skipped in testing, where the schema is created directly from the models and
+    is correct by construction.
+    """
+    if app.config.get("TESTING"):
+        return
+
+    try:
+        from app.core.schema_check import check_schema
+
+        with app.app_context():
+            report = check_schema(app)
+
+        if not report.is_stale:
+            logger.info("schema ok (alembic revision %s)", report.revision or "none")
+            return
+
+        logger.error(
+            "DATABASE IS BEHIND THE CODE — revision=%s missing_tables=%s "
+            "missing_columns=%s. Run: flask --app wsgi db upgrade "
+            "Else punches and corrections will fail.",
+            report.revision or "none",
+            report.missing_tables or "none",
+            report.missing_columns or "none",
+        )
+    except Exception as error:  # noqa: BLE001 - a diagnostic must never break startup
+        logger.warning("could not check the database schema: %s", error)
 
 
 def _register_cli(app: Flask) -> None:

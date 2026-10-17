@@ -191,8 +191,11 @@ class BiometricsController:
         :class:`~app.features.biometrics.adms.ADMSPunch`, because the ADMS wire
         format has no JSON object for an adapter to read.
 
-        Commits once per punch. The caller treats a raise as "retry this batch",
-        and every punch is idempotent via its content hash, so a retry is safe.
+        Two commits, deliberately. The punch is committed **on its own** before
+        attendance is resolved, because a punch is evidence: losing it because a
+        downstream step failed is far worse than recording it without attendance
+        yet. A punch whose resolution fails stays ``processed = false`` and is
+        completed by the device's retry or by ``flask reprocess-punches``.
         """
         from app.features.biometrics.adapters import DeviceAdapter, ParsedPunch
         from app.features.biometrics.exceptions import MalformedPunchError
@@ -209,6 +212,7 @@ class BiometricsController:
             raw={"line": punch.raw_line, "status": punch.status},
         )
 
+        # --- 1. persist the punch -----------------------------------------
         try:
             mapping, raw_log, created, reason = self.service.record_punch(
                 device=device,
@@ -216,22 +220,30 @@ class BiometricsController:
                 raw_payload=parsed.raw,
             )
             self.service.touch(device)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
 
-            if not created or mapping is None:
-                # Duplicate, or a user id with no employee mapping. Both are
-                # successfully handled: the punch is stored for audit, and the
-                # row is closed out rather than left "pending" forever.
-                #
-                # A pending row is indistinguishable from a stuck one, which is
-                # exactly how an unmapped device user presents: a punch that
-                # never becomes attendance and never explains why.
-                if mapping is None:
-                    reason = "unmapped_device_user"
-                if raw_log is not None:
-                    self.service.mark_processed(raw_log)
+        if raw_log is None:
+            # Nothing was stored and nothing already existed: nothing to do.
+            return {"stored": False, "duplicate": False, "reason": reason}
+
+        # A duplicate whose attendance was already resolved needs no work.
+        if not created and raw_log.processed:
+            return {"stored": True, "duplicate": True, "reason": reason}
+
+        # An unmatched device user is audited, then closed out so it does not
+        # look like work in progress forever.
+        if mapping is None:
+            if not raw_log.processed:
+                self.service.mark_processed(raw_log)
                 db.session.commit()
-                return {"stored": True, "duplicate": not created, "reason": reason}
+            return {"stored": True, "duplicate": not created,
+                    "reason": "unmapped_device_user"}
 
+        # --- 2. resolve attendance ----------------------------------------
+        try:
             employee = mapping.employee
             record = self.attendance.apply_punch(
                 employee_id=employee.id,
@@ -243,12 +255,21 @@ class BiometricsController:
             self.service.mark_processed(raw_log)
             db.session.commit()
         except Exception:
+            # The punch is already saved, so this rollback only discards the
+            # attendance attempt. It stays unprocessed and can be replayed.
             db.session.rollback()
+            logger.exception(
+                "punch stored but attendance failed SN=%s user=%s time=%s; "
+                "left unprocessed for retry",
+                device.serial_no,
+                parsed.device_user_id,
+                parsed.punch_time,
+            )
             raise
 
         return {
             "stored": True,
-            "duplicate": False,
+            "duplicate": not created,
             "reason": reason,
             "attendance_id": record.id,
         }

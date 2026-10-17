@@ -11,7 +11,18 @@ the same content type and the same form fields.
 
 Usage::
 
-    python tools/simulate_device.py https://kenems.up.railway.app CO8D230860112 <CommKey>
+    python tools/simulate_device.py <base-url> <serial> <CommKey>
+    python tools/simulate_device.py <base-url> <serial> <CommKey> --read-only
+
+**The push in step 3 writes a real record** to whatever database you point this
+at. Against production that means a real punch from a fake device, which will
+appear in the live stream and against whichever employee maps to device user 1.
+Use ``--read-only`` to run only the checks that write nothing (reachability,
+handshake, command poll), or clean up afterwards with::
+
+    flask --app wsgi shell
+    >>> from app.features.biometrics.models import BiometricRawLog
+    >>> BiometricRawLog.query.filter_by(device_user_id="1").delete()
 
 The CommKey is the secret shown once when the device was registered. If it was
 lost, rotate it in the app and use the new one.
@@ -49,17 +60,24 @@ def call(url: str, *, method: str = "GET", form: dict | None = None) -> tuple[in
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 4:
+    args = [item for item in argv[1:] if not item.startswith("--")]
+    read_only = any(item == "--read-only" for item in argv)
+
+    if len(args) < 3:
         print(__doc__)
         return 2
 
-    base = argv[1].rstrip("/")
-    serial = argv[2].strip()
-    comm_key = argv[3].strip()
+    base = args[0].rstrip("/")
+    serial = args[1].strip()
+    comm_key = args[2].strip()
 
     print(f"target : {base}")
     print(f"serial : {serial!r}")
     print(f"commkey: {comm_key[:4]}... ({len(comm_key)} chars)")
+    if read_only:
+        print("mode   : read-only (nothing will be written)")
+    else:
+        print("mode   : full — step 3 WRITES a real punch to this database")
     print()
 
     failures: list[str] = []
@@ -95,21 +113,26 @@ def main(argv: list[str]) -> int:
 
     # --- 3. push an attendance record -------------------------------------
     print("\n=== 3. push one ATTLOG record (what the device does next) ===")
-    form = {
-        "SN": serial,
-        "table": "ATTLOG",
-        "Stamp": "9999",
-        "CommKey": comm_key,
-        # PIN <tab> DateTime <tab> Status <tab> Verify <tab> WorkCode
-        "data": "1\t2026-10-16 08:12:33\t0\t1\t0\n",
-    }
-    status, body = call(f"{base}/iclock/cdata", method="POST", form=form)
-    push_ok = body.strip() == "OK"
-    print(f"  [{'ok  ' if push_ok else 'FAIL'}] POST /iclock/cdata -> {status} {body.strip()[:60]!r}")
-    if push_ok:
-        print("  Accepted. The record is now in biometric_raw_logs.")
+    if read_only:
+        print("  skipped (--read-only): this step would write a real punch")
     else:
-        failures.append(f"push returned {status}")
+        form = {
+            "SN": serial,
+            "table": "ATTLOG",
+            "Stamp": "9999",
+            "CommKey": comm_key,
+            # PIN <tab> DateTime <tab> Status <tab> Verify <tab> WorkCode
+            "data": "1\t2026-10-16 08:12:33\t0\t1\t0\n",
+        }
+        status, body = call(f"{base}/iclock/cdata", method="POST", form=form)
+        push_ok = body.strip() == "OK"
+        print(f"  [{'ok  ' if push_ok else 'FAIL'}] POST /iclock/cdata -> {status} {body.strip()[:60]!r}")
+        if push_ok:
+            print("  Accepted. A REAL punch is now in biometric_raw_logs for")
+            print("  device user 1. Remove it once satisfied — see this file's")
+            print("  docstring for the cleanup snippet.")
+        else:
+            failures.append(f"push returned {status}")
 
     # --- 4. command polling ------------------------------------------------
     print("\n=== 4. command poll (the device's idle loop) ===")

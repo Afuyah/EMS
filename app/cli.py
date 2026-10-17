@@ -347,6 +347,121 @@ def register_cli(app: Flask) -> None:
     # ------------------------------------------------------------------
     # Diagnostics
     # ------------------------------------------------------------------
+    @app.cli.command("check-schema")
+    def check_schema_command() -> None:
+        """Compare the database against the models; exit non-zero on a gap.
+
+        Run this first when a deployed feature misbehaves in a way that looks
+        impossible — a deploy that landed before its migration produces failures
+        far from the cause.
+        """
+        from app.core.schema_check import check_schema
+
+        report = check_schema(app)
+        click.echo(
+            f"alembic revision : {report.revision or '(none — migrations never ran)'}"
+        )
+
+        if report.missing_tables:
+            click.secho("MISSING TABLES", fg="red", bold=True)
+            for name in report.missing_tables:
+                click.echo(f"  {name}")
+
+        if report.missing_columns:
+            click.secho("MISSING COLUMNS — the code expects these", fg="red", bold=True)
+            for name in report.missing_columns:
+                click.echo(f"  {name}")
+
+        if report.extra_columns:
+            click.secho("EXTRA COLUMNS — present in the database only", fg="yellow")
+            for name in report.extra_columns:
+                click.echo(f"  {name}")
+
+        if report.is_stale:
+            click.echo("")
+            click.secho(
+                "The database is behind the code. Run:\n"
+                "  flask --app wsgi db upgrade",
+                fg="red",
+                bold=True,
+            )
+            raise SystemExit(1)
+
+        click.secho("Schema matches the models (0 gap(s)).", fg="green")
+
+    @app.cli.command("reprocess-punches")
+    @click.option("--limit", default=500, show_default=True,
+                  help="Maximum punches to replay.")
+    def reprocess_punches_command(limit: int) -> None:
+        """Replay punches that were stored but never turned into attendance.
+
+        A punch is committed as soon as it arrives, before attendance is
+        resolved, so a failure downstream leaves the punch safely stored and
+        marked unprocessed rather than losing it. This replays those.
+
+        Safe to run repeatedly: attendance resolution is idempotent per punch.
+        """
+        from app.core.database import db
+        from app.features.attendance.service import AttendanceService
+        from app.features.biometrics.models import BiometricRawLog
+        from app.features.biometrics.service import BiometricsService
+
+        biometrics = BiometricsService()
+        attendance = AttendanceService()
+        rows = biometrics.raw_logs.unprocessed(limit=limit)
+
+        if not rows:
+            click.secho("No unprocessed punches.", fg="green")
+            return
+
+        click.echo(f"Replaying {len(rows)} unprocessed punch(es)...")
+        resolved = 0
+        unmapped = 0
+        failed = 0
+
+        for raw in rows:
+            mapping = biometrics.maps.resolve(
+                device_id=raw.device_id, device_user_id=raw.device_user_id
+            )
+            if mapping is None:
+                # Still unmapped: leave it unprocessed so it appears in the
+                # device's unmatched list and can be resolved by mapping.
+                unmapped += 1
+                continue
+            try:
+                employee = mapping.employee
+                attendance.apply_punch(
+                    employee_id=employee.id,
+                    department_id=employee.department_id,
+                    tz_name=employee.tz,
+                    punch_time=raw.punch_time,
+                    punch_type=raw.punch_type,
+                )
+                biometrics.mark_processed(raw)
+                db.session.commit()
+                resolved += 1
+            except Exception as error:  # noqa: BLE001 - keep going through the batch
+                db.session.rollback()
+                failed += 1
+                logger.warning(
+                    "reprocess failed for punch id=%s: %s: %s",
+                    raw.id,
+                    type(error).__name__,
+                    error,
+                )
+
+        click.echo(
+            f"  resolved={resolved}  unmapped={unmapped}  failed={failed}"
+        )
+        if failed:
+            click.secho(
+                "Some punches still failed — check the schema "
+                "(flask --app wsgi check-schema) and the logs.",
+                fg="yellow",
+            )
+            raise SystemExit(1)
+        click.secho("Done.", fg="green")
+
     @app.cli.command("routes")
     def routes_command() -> None:
         """Print every registered URL rule."""

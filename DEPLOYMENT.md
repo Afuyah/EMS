@@ -241,7 +241,54 @@ That is the entire bootstrap. The last command prompts for a password twice
 
 ```bash
 curl -s localhost:$PORT/health     # {"status":"ok","database":"up"}
+flask --app wsgi check-schema      # must print "Schema matches the models"
 ```
+
+### After EVERY deploy: `db upgrade`
+
+A deploy that lands before its migration is the most confusing failure this app
+can produce. Every query touching a new column fails, and the error shows up far
+from its cause — a punch that is simply "not recorded", or *"The correction could
+not be saved."* — with nothing pointing at the database.
+
+So after any deploy that includes a migration:
+
+```bash
+flask --app wsgi db upgrade
+flask --app wsgi check-schema
+```
+
+`check-schema` compares every model column against the database and names what is
+missing:
+
+```
+alembic revision : 8b1f4c7a2d90
+MISSING COLUMNS — the code expects these
+  attendance_daily.sessions
+The database is behind the code. Run:
+  flask --app wsgi db upgrade
+```
+
+The app also logs this **at startup**, so a stale schema is visible in the deploy
+log rather than only when a user hits the broken screen:
+
+```
+ERROR  DATABASE IS BEHIND THE CODE — missing_columns=['attendance_daily.sessions']
+```
+
+It never refuses to start: a running process that can serve sign-in and the
+health probe is more useful than a crash loop.
+
+### If punches were stranded by an earlier failure
+
+Punches are now committed **before** attendance is resolved, so a later failure
+no longer discards them. Replay anything left unprocessed:
+
+```bash
+flask --app wsgi reprocess-punches
+```
+
+Idempotent, so running it repeatedly is safe.
 
 ### Why step 2 matters
 

@@ -190,3 +190,50 @@ class TestStatusWithSessions:
         _punch(service, employee, 10)
         row = _punch(service, employee, 14)  # a late return
         assert row.late_minutes == 0, "already arrived on time this morning"
+
+
+class TestCorrectionKeepsSessionsConsistent:
+    def test_a_correction_replaces_the_session_list(self, attendance):
+        """Otherwise the sessions would show times the row no longer holds.
+
+        A stale list is not cosmetic: the next punch is resolved against it, so
+        the machine would trust punches HR has already overridden.
+        """
+        service, employee = attendance
+        # A split shift: two sessions.
+        for hour in (6, 10, 14, 16):
+            _punch(service, employee, hour)
+        row = _row(employee)
+        assert len(row.sessions) == 2
+
+        from datetime import datetime as _dt
+
+        corrected = service.correct_day(
+            row.id,
+            clock_in=_dt(2026, 6, 1, 7, 0, tzinfo=timezone.utc),
+            clock_out=_dt(2026, 6, 1, 15, 0, tzinfo=timezone.utc),
+        )
+        db.session.commit()
+
+        assert len(corrected.sessions) == 1, "a manual correction is one pair"
+        assert corrected.sessions[0]["out"] is not None
+        assert corrected.worked_minutes == 8 * 60
+        # And the pair matches what HR typed.
+        assert corrected.sessions[0]["in"].startswith("2026-06-01T07:00")
+        assert corrected.sessions[0]["out"].startswith("2026-06-01T15:00")
+
+    def test_a_correction_with_only_a_clock_in_leaves_the_session_open(self, attendance):
+        service, employee = attendance
+        _punch(service, employee, 6)
+        row = _row(employee)
+
+        from datetime import datetime as _dt
+
+        corrected = service.correct_day(
+            row.id,
+            clock_in=_dt(2026, 6, 1, 7, 30, tzinfo=timezone.utc),
+        )
+        db.session.commit()
+
+        assert len(corrected.sessions) == 1
+        assert corrected.sessions[0]["out"] is None

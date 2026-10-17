@@ -473,6 +473,22 @@ class AttendanceService:
             record.late_minutes = outcome.late_minutes
             record.early_leave_minutes = outcome.early_leave_minutes
             record.worked_minutes = outcome.worked_minutes
+            # Keep the session list consistent with what HR typed. A manual
+            # correction replaces the recorded punches with one explicit pair,
+            # so leaving the old sessions behind would show times that no longer
+            # match clock_in/clock_out — and the next punch would then be
+            # resolved against the stale list rather than the corrected day.
+            if record.clock_in is None:
+                record.sessions = []
+            else:
+                record.sessions = [
+                    {
+                        "in": ensure_utc(record.clock_in).isoformat(),
+                        "out": ensure_utc(record.clock_out).isoformat()
+                        if record.clock_out
+                        else None,
+                    }
+                ]
             # An explicit status supplied by HR wins over the computed one.
             if status is None and outcome.status is not None:
                 record.status = outcome.status.value

@@ -134,7 +134,11 @@ class TestPunchIngestion:
 
         assert not created_twice
         assert reason == "duplicate"
-        assert second_log is None
+        # The existing row is returned, not None: a device retry must be able to
+        # resume attendance resolution that failed on the first attempt. The row
+        # itself is still the original one, not a second insert.
+        assert second_log is not None
+        assert second_log.id == first_log.id
         # The append-only log holds exactly one row for the retried punch.
         assert BiometricRawLog.query.count() == 1
         assert BiometricRawLog.query.first().id == first_log.id
