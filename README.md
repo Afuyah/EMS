@@ -199,6 +199,26 @@ run from the CLI without a broker.
 
 ## Domain notes
 
+### Session expiry in the browser
+
+The web UI polls (a punch stream every 5s, a notification bell every 30s, the
+attendance board every 30s). When a session expires, those polls must not each
+fetch the sign-in page and swap its HTML into their target — that is how a user
+ends up with several nested sign-in pages on one screen.
+
+So an expired **HTMX** request is answered with `200` plus an `HX-Redirect`
+header and an **empty body**. HTMX turns that into a real navigation, so exactly
+one clean sign-in page appears and no sign-in HTML ever reaches a fragment. A
+plain page navigation keeps the ordinary `302 ... ?next=<page>`.
+
+Note the `next` value differs deliberately: a real page is worth returning to, a
+polled fragment (e.g. `/app/attendance/live`) is not, so HTMX callers are sent to
+a bare `/app/login` and land on their dashboard afterwards.
+
+`app.js` carries a backstop: a single-navigation guard, a 401 handler on the
+keep-alive ping, and an `htmx:beforeSwap` check that cancels a swap if a sign-in
+form is about to replace a fragment.
+
 ### Biometrics
 
 Two ways in, because hardware and software callers need different things.
@@ -304,12 +324,56 @@ transaction.
 
 ### Attendance resolution
 
-The first punch of the day sets `clock_in`; a second, later punch sets
-`clock_out`; extra punches are ignored. `late_minutes`,
-`early_leave_minutes` and `worked_minutes` are recomputed against the
-department's shift policy (department override, else the global default). All
-timestamps are stored in UTC and converted to the employee's timezone at the
-edges.
+A day is a **sequence of sessions**, not a single clock-in/clock-out pair. An
+open session is closed by the next punch, and a punch arriving long enough after
+a departure opens a new one:
+
+```
+07:00 in → 11:00 out → 15:00 in → 17:00 out
+   = two sessions, 4h + 2h = 6h worked
+```
+
+`worked_minutes` is the **sum across every completed session**, so a split shift
+is credited in full. `clock_in` / `clock_out` remain the day's first arrival and
+latest departure, so existing reports and exports are unchanged.
+
+The rules that decide what a punch does:
+
+| Situation | Outcome |
+| --- | --- |
+| No clock-in yet | opens the day (`first_punch_of_day`) |
+| A session is open, punch after it | closes that session |
+| A session is open, punch within 1 min of the clock-in | ignored (`within_minimum_gap`) |
+| A session is open, punch *before* the clock-in | ignored (`punch_before_clock_in`) |
+| All sessions closed, punch ≥ `session_break_minutes` (default 120) later | opens a second session |
+| All sessions closed, punch within 1 min of the last departure | ignored (`duplicate_after_clock_out`) |
+| All sessions closed, punch in between | ignored (`brief_absence_not_a_new_session`) |
+
+That middle band is deliberate: a scan twenty minutes after leaving is not a
+return to work, and inventing hours for it would be worse than dropping a stray
+scan. `session_break_minutes` lives on the shift policy, so a workplace with long
+breaks can raise it.
+
+`late_minutes` comes from the **first** arrival — returning in the afternoon does
+not make someone late. `early_leave_minutes` is measured against the latest
+departure. All timestamps are stored in UTC and converted to the employee's
+timezone at the edges.
+
+Sessions are stored as JSON on the row (`attendance_daily.sessions`). A row
+written before that column existed has a NULL list and is read as a single
+session from the scalar columns, so no backfill was needed.
+
+### Live punches
+
+`/app/attendance/live` is a small HTML fragment listing the most recent **raw
+device punches**, polling every 5 seconds on the dashboard and the attendance
+board. It is deliberately not the same as the resolved attendance rows:
+
+* a matched punch shows the employee and reads **recorded**;
+* an unmatched one shows **unmatched** with a link to map it.
+
+A punch that never becomes attendance is therefore visible and explained, rather
+than sitting at `processed = false` looking like work in progress.
 
 ---
 

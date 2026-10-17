@@ -53,6 +53,14 @@ class AttendanceDaily(db.Model):
     late_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     early_leave_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     worked_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: Every attendance session of the day, in order:
+    #: ``[{"in": iso, "out": iso | None}, ...]``.
+    #:
+    #: A day can hold more than one — someone who leaves and returns has two —
+    #: and ``worked_minutes`` is their sum. ``clock_in``/``clock_out`` above stay
+    #: as the day's first arrival and latest departure, so existing reports keep
+    #: working. An entry with ``"out": None`` is a session still in progress.
+    sessions: Mapped[list | None] = mapped_column(JSON)
     notes: Mapped[str | None] = mapped_column(String(500))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

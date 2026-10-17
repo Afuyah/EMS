@@ -40,6 +40,12 @@ with app.app_context():
     waiting = employees.list_missing_gender()
     total = employees.count_employees()
     print(f"    {len(waiting)} of {total} employee(s) need a gender")
+
+    # Remember what this check changes, so it can put it back. Without this the
+    # employee borrowed below keeps gender=NULL after the run, quietly leaving
+    # the database worse than it was found.
+    restore: dict[int, str | None] = {}
+
     if waiting:
         check("the needs-gender list is populated", True)
         subject = waiting[0]
@@ -48,6 +54,7 @@ with app.app_context():
         # unrecorded path rather than skipping the rule entirely.
         print("    (everyone is recorded; clearing one temporarily to test the rule)")
         subject = Employee.query.filter_by(is_active=True).first()
+        restore[subject.id] = subject.gender
         employees.update_employee(subject.id, gender="female")
         db.session.commit()
         subject.gender = None
@@ -150,15 +157,31 @@ with app.app_context():
         check("the empty state is shown instead",
               "Every employee has a gender recorded" in screen)
 
-    print("\n=== 6b. gender is now recorded for everyone ===")
-    check("no employee is left without a gender", actually_missing == 0,
-          f"{actually_missing} still missing")
+    print("\n=== 6b. the borrowed employee is the only one outstanding ===")
+    # The employee borrowed in step 1 is deliberately still NULL here, so the
+    # expectation is "nobody except that one", not "nobody at all".
+    borrowed = set(restore)
+    outstanding = {e.id for e in employees.list_missing_gender()}
+    check("only the borrowed employee is missing a gender",
+          outstanding == borrowed,
+          f"outstanding={sorted(outstanding)} borrowed={sorted(borrowed)}")
 
     print("\n=== 7. the create form requires a gender ===")
     new_form = admin.get("/app/employees/new").get_data(as_text=True)
     check("both options are offered",
           'value="female"' in new_form and 'value="male"' in new_form)
     check("it is marked required", 'name="gender" value="female" required' in new_form)
+
+    print("\n=== 8. put back anything this check changed ===")
+    for employee_id, original in restore.items():
+        employees.update_employee(employee_id, gender=original or "female")
+    if restore:
+        db.session.commit()
+        print(f"    restored the gender of {len(restore)} borrowed employee(s)")
+
+    remaining = len(employees.list_missing_gender())
+    check("the check left nobody without a gender", remaining == 0,
+          f"{remaining} still missing")
 
 print(f"\n=== RESULT: {len(problems)} problem(s) ===")
 for problem in problems:

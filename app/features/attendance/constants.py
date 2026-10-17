@@ -109,6 +109,15 @@ MIN_PUNCH_GAP_MINUTES = 1
 #: Beyond this, a second punch no longer reads as a clock-out.
 MAX_CLOCK_OUT_GAP_MINUTES = 16 * 60
 
+#: A punch this long after a completed clock-out opens a *new* session.
+#:
+#: This is what makes a split shift work: leave at 11:00, return at 15:00, and
+#: the afternoon counts as its own session rather than being discarded. The gap
+#: must comfortably exceed a normal break (a lunch hour) and stay well under a
+#: full night, so 2 hours is the boundary between "still the same attendance"
+#: and "a second stint".
+MIN_SESSION_BREAK_MINUTES = 120
+
 #: Worked minutes below this share of the shift flag a half day.
 HALF_DAY_RATIO = 0.5
 

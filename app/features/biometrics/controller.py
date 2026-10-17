@@ -219,7 +219,16 @@ class BiometricsController:
 
             if not created or mapping is None:
                 # Duplicate, or a user id with no employee mapping. Both are
-                # successfully handled: auditing them is the correct outcome.
+                # successfully handled: the punch is stored for audit, and the
+                # row is closed out rather than left "pending" forever.
+                #
+                # A pending row is indistinguishable from a stuck one, which is
+                # exactly how an unmapped device user presents: a punch that
+                # never becomes attendance and never explains why.
+                if mapping is None:
+                    reason = "unmapped_device_user"
+                if raw_log is not None:
+                    self.service.mark_processed(raw_log)
                 db.session.commit()
                 return {"stored": True, "duplicate": not created, "reason": reason}
 

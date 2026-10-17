@@ -65,6 +65,39 @@
     });
   }
 
+  /**
+   * Session expiry must not litter the page with sign-in pages.
+   *
+   * HTMX follows redirects transparently, so an expired session used to fetch
+   * the sign-in page and swap its HTML into whatever fragment was refreshing.
+   * With the board, the punch stream and the notification bell all polling, that
+   * stacked several sign-in pages inside the page the user was on.
+   *
+   * The server now answers HTMX with `HX-Redirect` (a real navigation) instead
+   * of a redirect, so this is the belt to that braces: a single guard so only
+   * one navigation is ever started, plus a clear message rather than a silent
+   * jump.
+   */
+  var redirectingToSignIn = false;
+
+  function goToSignIn(message) {
+    if (redirectingToSignIn) return;
+    redirectingToSignIn = true;
+    // Stop every polling element so nothing else fires mid-navigation.
+    if (window.htmx && typeof window.htmx.trigger === "function") {
+      document.querySelectorAll("[hx-trigger]").forEach(function (el) {
+        el.removeAttribute("hx-trigger");
+      });
+    }
+    if (message) toast(message, "info");
+    var target = "/app/login";
+    window.setTimeout(function () {
+      window.location.assign(target + "?next=" + encodeURIComponent(
+        window.location.pathname + window.location.search
+      ));
+    }, message ? 900 : 0);
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     bindConfirmations(document);
     bindCopyButtons(document);
@@ -74,8 +107,38 @@
       bindCopyButtons(event.target);
     });
 
-    document.body.addEventListener("htmx:responseError", function () {
+    document.body.addEventListener("htmx:responseError", function (event) {
+      var status = event.detail && event.detail.xhr ? event.detail.xhr.status : 0;
+      if (status === 401 || status === 403) {
+        goToSignIn("Your session expired. Please sign in again.");
+        return;
+      }
       toast("The server rejected that request.", "error");
+    });
+
+    // A sign-in page arriving where a fragment was expected means the session
+    // expired somewhere that did not set HX-Redirect. Catch it before the swap
+    // so the page is never replaced by a stray sign-in form.
+    document.body.addEventListener("htmx:beforeSwap", function (event) {
+      var xhr = event.detail && event.detail.xhr;
+      if (!xhr) return;
+      if (xhr.getResponseHeader("HX-Redirect")) {
+        // HTMX handles this itself; cancel our own swap for safety.
+        event.detail.shouldSwap = false;
+        goToSignIn("Your session expired. Please sign in again.");
+        return;
+      }
+      var body = xhr.responseText || "";
+      var looksLikeSignIn =
+        body.indexOf('action="/app/login"') !== -1 ||
+        body.indexOf("name=\"password\"") !== -1;
+      var expectedFragment = event.detail.target &&
+        event.detail.target.id &&
+        event.detail.target.id !== "attendance-board";
+      if (looksLikeSignIn && expectedFragment) {
+        event.detail.shouldSwap = false;
+        goToSignIn("Your session expired. Please sign in again.");
+      }
     });
 
     document.body.addEventListener("htmx:sendError", function () {
@@ -85,7 +148,15 @@
 
   // Session keep-alive: rotate cookies quietly every 10 minutes.
   setInterval(function () {
+    if (redirectingToSignIn) return;
     fetch("/app/refresh-session", { method: "POST", credentials: "same-origin" })
+      .then(function (response) {
+        // A 401 here means the refresh token itself is gone: the session is
+        // over, so say so once instead of letting the next poll discover it.
+        if (response.status === 401) {
+          goToSignIn("Your session expired. Please sign in again.");
+        }
+      })
       .catch(function () { /* handled on next navigation */ });
   }, 10 * 60 * 1000);
 

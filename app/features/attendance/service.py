@@ -24,6 +24,7 @@ from app.features.attendance.engine import (
     compute_early_leave_minutes,
     compute_late_minutes,
     compute_worked_minutes,
+    parse_sessions,
     recompute,
     resolve_punch,
     should_mark_absent,
@@ -390,6 +391,7 @@ class AttendanceService:
             work_date=work_date,
             tz_name=tz_name,
             policy=policy,
+            existing_sessions=parse_sessions(record.sessions),
             existing_clock_in=record.clock_in,
             existing_clock_out=record.clock_out,
         )
@@ -405,6 +407,9 @@ class AttendanceService:
 
         record.clock_in = outcome.clock_in
         record.clock_out = outcome.clock_out
+        # The full session list is what makes a split shift countable; the scalar
+        # columns above remain the day's first arrival and latest departure.
+        record.sessions = [session.as_dict() for session in outcome.sessions]
         if outcome.status is not None:
             record.status = outcome.status.value
         record.late_minutes = outcome.late_minutes
@@ -413,13 +418,14 @@ class AttendanceService:
         self.attendance.update(record)
 
         logger.info(
-            "attendance %s employee=%s date=%s status=%s late=%s worked=%s",
+            "attendance %s employee=%s date=%s status=%s late=%s worked=%s sessions=%d",
             outcome.action,
             employee_id,
             work_date,
             record.status,
             record.late_minutes,
             record.worked_minutes,
+            len(outcome.sessions),
         )
         return record
 

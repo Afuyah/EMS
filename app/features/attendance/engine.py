@@ -14,7 +14,7 @@ Rules, per the project brief:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 
 from app.core.time import ensure_utc, minutes_between, shift_bounds
@@ -24,6 +24,7 @@ from app.features.attendance.constants import (
     LATE_THRESHOLD_MINUTES,
     MAX_CLOCK_OUT_GAP_MINUTES,
     MIN_PUNCH_GAP_MINUTES,
+    MIN_SESSION_BREAK_MINUTES,
     ArrivalTier,
     AttendanceStatus,
 )
@@ -42,6 +43,10 @@ class ShiftPolicy:
     #: Minutes after shift start at which a missing punch becomes an absence.
     #: ``None`` defers that decision to the nightly job.
     auto_absent_after_minutes: int | None = None
+    #: How long a gap after clocking out must be before the next punch counts as
+    #: a second session rather than a stray scan. Raise it where staff take long
+    #: breaks; lower it where they routinely come and go.
+    session_break_minutes: int = MIN_SESSION_BREAK_MINUTES
 
     @property
     def nominal_minutes(self) -> int:
@@ -85,6 +90,87 @@ class PunchEvent:
 
 
 @dataclass(frozen=True)
+class WorkSession:
+    """One continuous period of attendance: a clock-in and its clock-out.
+
+    A day may contain several — someone who leaves at lunchtime and returns in
+    the afternoon has two. Only a ``clock_out`` that has happened is stored, so
+    an open session has ``clock_out is None`` and is still in progress.
+    """
+
+    clock_in: datetime
+    clock_out: datetime | None = None
+
+    @property
+    def is_open(self) -> bool:
+        return self.clock_out is None
+
+    @property
+    def worked_minutes(self) -> int:
+        """Completed minutes in this session; 0 while it is still open."""
+        if self.clock_out is None:
+            return 0
+        return compute_worked_minutes(self.clock_in, self.clock_out)
+
+    def as_dict(self) -> dict[str, str | None]:
+        return {
+            "in": ensure_utc(self.clock_in).isoformat(),
+            "out": ensure_utc(self.clock_out).isoformat() if self.clock_out else None,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "WorkSession":
+        """Rebuild from stored JSON. Tolerates the key names we have used."""
+        start = raw.get("in") or raw.get("clock_in")
+        end = raw.get("out") or raw.get("clock_out")
+        return cls(
+            clock_in=datetime.fromisoformat(str(start)),
+            clock_out=datetime.fromisoformat(str(end)) if end else None,
+        )
+
+
+def parse_sessions(raw) -> list[WorkSession]:
+    """Read the stored session list, ignoring anything malformed.
+
+    Attendance must never fail to render because one historical row holds an
+    unexpected shape, so bad entries are skipped rather than raised.
+    """
+    if not isinstance(raw, list):
+        return []
+    sessions: list[WorkSession] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            sessions.append(WorkSession.from_dict(item))
+        except (TypeError, ValueError):
+            continue
+    return sessions
+
+
+def total_worked_minutes(sessions: list[WorkSession]) -> int:
+    """Sum of every completed session. The open one contributes nothing yet."""
+    return sum(session.worked_minutes for session in sessions)
+
+
+def first_clock_in(sessions: list[WorkSession]) -> datetime | None:
+    real = [session.clock_in for session in sessions]
+    return min(real) if real else None
+
+
+def last_clock_out(sessions: list[WorkSession]) -> datetime | None:
+    """The latest *completed* clock-out, or ``None`` if any session is open.
+
+    An open session means the employee is currently in, so the day has no final
+    clock-out to show yet.
+    """
+    if any(session.is_open for session in sessions):
+        return None
+    ends = [session.clock_out for session in sessions if session.clock_out]
+    return max(ends) if ends else None
+
+
+@dataclass
 class ResolvedDay:
     """The attendance values a punch resolves to."""
 
@@ -97,6 +183,8 @@ class ResolvedDay:
     early_leave_minutes: int = 0
     worked_minutes: int = 0
     tier: ArrivalTier = ArrivalTier.ON_TIME
+    #: Every session of the day after this punch, in order.
+    sessions: list[WorkSession] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
@@ -180,24 +268,94 @@ def classify(
     return AttendanceStatus.PRESENT
 
 
+def _close_session(
+    *,
+    sessions: list[WorkSession],
+    punch_time: datetime,
+    closed_index: int,
+    work_date,
+    tz_name: str,
+    policy: ShiftPolicy,
+) -> ResolvedDay:
+    """Finish the session at ``closed_index`` and recompute the day.
+
+    The day's lateness comes from the **first** clock-in (when they arrived),
+    and its worked total from **every** completed session, so a split shift is
+    credited in full rather than only its first half.
+    """
+    clock_in = sessions[0].clock_in
+    late = compute_late_minutes(
+        clock_in, work_date=work_date, policy=policy, tz_name=tz_name
+    )
+    early = compute_early_leave_minutes(
+        punch_time, work_date=work_date, policy=policy, tz_name=tz_name
+    )
+    worked = total_worked_minutes(sessions)
+    return ResolvedDay(
+        action="clock_out",
+        reason="session_closed",
+        status=classify(
+            late_minutes=late,
+            early_leave_minutes=early,
+            worked_minutes=worked,
+            policy=policy,
+            # The day is only complete once no session is still open.
+            has_clock_out=not any(item.is_open for item in sessions),
+        ),
+        clock_in=clock_in,
+        clock_out=last_clock_out(sessions),
+        late_minutes=late,
+        early_leave_minutes=early,
+        worked_minutes=worked,
+        tier=policy.arrival_tier(late),
+        sessions=sessions,
+    )
+
+
 def resolve_punch(
     *,
     punch: PunchEvent,
     work_date,
     tz_name: str,
     policy: ShiftPolicy,
+    existing_sessions: list[WorkSession] | None = None,
     existing_clock_in: datetime | None = None,
     existing_clock_out: datetime | None = None,
 ) -> ResolvedDay:
-    """Decide what one punch does to a daily attendance row."""
+    """Decide what one punch does to a daily attendance row.
+
+    A day is a sequence of sessions. Successive punches alternate: an open
+    session is closed by the next punch, and after a long enough gap the punch
+    after that opens a new one. So
+
+        07:00 in, 11:00 out, 15:00 in, 17:00 out
+
+    is two sessions and four hours plus two hours — the afternoon is *not*
+    discarded, which is what a single clock-in/clock-out pair would do.
+
+    ``existing_sessions`` is authoritative; the scalar ``existing_clock_in`` /
+    ``existing_clock_out`` are accepted for callers holding rows recorded before
+    sessions existed.
+    """
     punch_time = ensure_utc(punch.punch_time)
     punch_type = PunchType.coerce(punch.punch_type)
 
-    # --- no clock-in yet: this punch opens the day -----------------------
-    if existing_clock_in is None:
+    # Rebuild the day when only the legacy scalar columns were supplied.
+    sessions = list(existing_sessions or [])
+    if not sessions and existing_clock_in is not None:
+        sessions = [
+            WorkSession(
+                clock_in=ensure_utc(existing_clock_in),
+                clock_out=ensure_utc(existing_clock_out) if existing_clock_out else None,
+            )
+        ]
+
+    # --- nobody has arrived yet: this punch opens the day ------------------
+    if not sessions:
         late = compute_late_minutes(
             punch_time, work_date=work_date, policy=policy, tz_name=tz_name
         )
+        opening = WorkSession(clock_in=punch_time)
         return ResolvedDay(
             action="clock_in",
             reason="first_punch_of_day",
@@ -211,78 +369,122 @@ def resolve_punch(
             clock_in=punch_time,
             late_minutes=late,
             tier=policy.arrival_tier(late),
+            sessions=[opening],
         )
 
-    clock_in = ensure_utc(existing_clock_in)
-
-    # --- already closed: extra punches are ignored ------------------------
-    if existing_clock_out is not None:
-        return ResolvedDay(
-            action="ignored",
-            reason="day_already_closed",
-            clock_in=clock_in,
-            clock_out=ensure_utc(existing_clock_out),
-        )
-
-    # --- a punch earlier than the clock-in does not close the day ---------
-    if punch_time <= clock_in:
-        return ResolvedDay(
-            action="ignored",
-            reason="punch_before_clock_in",
-            clock_in=clock_in,
-        )
-
-    # --- successive punches that are effectively the same moment ----------
-    if punch_time - clock_in < timedelta(minutes=MIN_PUNCH_GAP_MINUTES):
-        return ResolvedDay(
-            action="ignored",
-            reason="within_minimum_gap",
-            clock_in=clock_in,
-        )
-
-    # --- an explicit "in" never becomes a clock-out ------------------------
-    if punch_type is PunchType.IN:
-        return ResolvedDay(
-            action="ignored",
-            reason="duplicate_clock_in_type",
-            clock_in=clock_in,
-        )
-
-    # --- a "not out" punch without an explicit out type, too far away ------
-    if (
-        punch_type is not PunchType.OUT
-        and punch_time - clock_in > timedelta(minutes=MAX_CLOCK_OUT_GAP_MINUTES)
-    ):
-        return ResolvedDay(
-            action="ignored",
-            reason="clock_out_too_far_from_clock_in",
-            clock_in=clock_in,
-        )
-
-    # --- close the day ----------------------------------------------------
-    late = compute_late_minutes(
-        clock_in, work_date=work_date, policy=policy, tz_name=tz_name
+    open_index = next(
+        (index for index, item in enumerate(sessions) if item.is_open), None
     )
-    early = compute_early_leave_minutes(
-        punch_time, work_date=work_date, policy=policy, tz_name=tz_name
-    )
-    worked = compute_worked_minutes(clock_in, punch_time)
-    return ResolvedDay(
-        action="clock_out",
-        reason="second_punch_of_day",
-        status=classify(
-            late_minutes=late,
-            early_leave_minutes=early,
-            worked_minutes=worked,
+
+    # --- a session is running ---------------------------------------------
+    if open_index is not None:
+        current = sessions[open_index]
+        clock_in = ensure_utc(current.clock_in)
+
+        # A punch that cannot start a session because it precedes the clock-in.
+        # Handled first: a negative elapsed time would otherwise satisfy any
+        # "less than a threshold" test below and be misreported as a duplicate.
+        if punch_time < clock_in:
+            return ResolvedDay(
+                action="ignored",
+                reason="punch_before_clock_in",
+                clock_in=sessions[0].clock_in,
+                sessions=sessions,
+            )
+
+        # Two scans at effectively the same moment: a duplicate, not a session.
+        if punch_time - clock_in < timedelta(minutes=MIN_PUNCH_GAP_MINUTES):
+            return ResolvedDay(
+                action="ignored",
+                reason="within_minimum_gap",
+                clock_in=sessions[0].clock_in,
+                sessions=sessions,
+            )
+
+        # An explicit "in" never closes a session.
+        if punch_type is PunchType.IN:
+            return ResolvedDay(
+                action="ignored",
+                reason="duplicate_clock_in_type",
+                clock_in=sessions[0].clock_in,
+                sessions=sessions,
+            )
+
+        # Too far from the clock-in to be credible as its clock-out. The punch is
+        # reported rather than silently absorbed, so the day is not left open.
+        if (
+            punch_type is not PunchType.OUT
+            and punch_time - clock_in > timedelta(minutes=MAX_CLOCK_OUT_GAP_MINUTES)
+        ):
+            return ResolvedDay(
+                action="ignored",
+                reason="clock_out_too_far_from_clock_in",
+                clock_in=sessions[0].clock_in,
+                sessions=sessions,
+            )
+
+        sessions[open_index] = WorkSession(clock_in=clock_in, clock_out=punch_time)
+        return _close_session(
+            sessions=sessions,
+            punch_time=punch_time,
+            closed_index=open_index,
+            work_date=work_date,
+            tz_name=tz_name,
             policy=policy,
-            has_clock_out=True,
-        ),
-        clock_in=clock_in,
-        clock_out=punch_time,
-        late_minutes=late,
-        early_leave_minutes=early,
-        worked_minutes=worked,
-        tier=policy.arrival_tier(late),
+        )
+
+    # --- every session is closed: is this a new one, or a stray duplicate? --
+    last_out = last_clock_out(sessions)
+    if last_out is None:  # pragma: no cover - defensive
+        return ResolvedDay(action="ignored", reason="no_open_session", sessions=sessions)
+
+    gap = punch_time - ensure_utc(last_out)
+    # A repeat scan of the same departure, not a return to work. An exact match
+    # is what makes a device replaying a record a no-op.
+    if gap <= timedelta(0) or gap < timedelta(minutes=MIN_PUNCH_GAP_MINUTES):
+        return ResolvedDay(
+            action="ignored",
+            reason="duplicate_after_clock_out",
+            clock_in=sessions[0].clock_in,
+            clock_out=last_out,
+            sessions=sessions,
+        )
+
+    if gap >= timedelta(minutes=policy.session_break_minutes):
+        # A genuine return: the day continues with a second session. Lateness is
+        # unchanged — they were already in this morning.
+        sessions.append(WorkSession(clock_in=punch_time))
+        late = compute_late_minutes(
+            sessions[0].clock_in, work_date=work_date, policy=policy, tz_name=tz_name
+        )
+        return ResolvedDay(
+            action="clock_in",
+            reason="new_session_after_break",
+            status=classify(
+                late_minutes=late,
+                early_leave_minutes=0,
+                worked_minutes=total_worked_minutes(sessions),
+                policy=policy,
+                has_clock_out=False,
+            ),
+            clock_in=sessions[0].clock_in,
+            clock_out=None,
+            late_minutes=late,
+            worked_minutes=total_worked_minutes(sessions),
+            tier=policy.arrival_tier(late),
+            sessions=sessions,
+        )
+
+    # A short gap after clocking out with nothing in between: ignore it rather
+    # than invent a session. Anything beyond a duplicate but short of a real
+    # break is ambiguous, and inventing hours here would be worse than dropping
+    # a stray scan.
+    return ResolvedDay(
+        action="ignored",
+        reason="brief_absence_not_a_new_session",
+        clock_in=sessions[0].clock_in,
+        clock_out=last_out,
+        sessions=sessions,
     )
 
 

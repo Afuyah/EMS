@@ -64,7 +64,7 @@
   <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
     <span class="inline-flex items-center gap-1.5">
       <span class="inline-flex h-2 w-2 {{ 'animate-pulse' if is_today }} rounded-full {{ 'bg-emerald-500' if is_today else 'bg-slate-400' }}"></span>
-      {{ 'Live — refreshes every 60s' if is_today else 'Historical view for ' ~ work_date.strftime('%d %b %Y') }}
+      {{ 'Live — board 30s, punches 5s' if is_today else 'Historical view for ' ~ work_date.strftime('%d %b %Y') }}
     </span>
     <span>{{ open_count }} still clocked in</span>
     <span>Average {{ '%.1fh'|format(avg_worked / 60) }} worked</span>
@@ -152,7 +152,7 @@
     <div class="lg:col-span-3">
       <div id="attendance-board"
            hx-get="{{ url_for('views.attendance') }}?{{ request.query_string.decode('utf-8') }}"
-           hx-trigger="{{ 'every 60s' if is_today else 'none' }}"
+           hx-trigger="{{ 'every 30s' if is_today else 'none' }}"
            hx-swap="innerHTML">
         {% include "attendance/_board.html" %}
       </div>
@@ -161,9 +161,12 @@
     <!-- Side panels -->
     <div class="space-y-6">
       {% include "attendance/_panels.html" %}
+      {# The punch stream refreshes far faster than the board: a punch appearing
+         seconds after someone scans is the whole point of a live view, and the
+         fragment is small enough that polling it often is cheap. #}
       <div id="live-punches"
            hx-get="{{ url_for('views.attendance_live') }}"
-           hx-trigger="{{ 'every 30s' if is_today else 'none' }}"
+           hx-trigger="{{ 'load, every 5s' if is_today else 'none' }}"
            hx-swap="innerHTML">
         {% include "attendance/_live.html" %}
       </div>

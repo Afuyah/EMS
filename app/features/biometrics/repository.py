@@ -201,6 +201,16 @@ class RawLogRepository(BaseRepository[BiometricRawLog]):
         return list(db.session.execute(stmt).scalars().all())
 
     def recent_with_device(self, *, limit: int = 50) -> list[dict]:
+        """Recent punches with the device they came from.
+
+        Also resolves the employee the punch belongs to, when the device's user
+        id is mapped. Without that, a punch that did not become attendance looks
+        identical to one that is still being processed — the difference between
+        "waiting" and "could not be attributed" is the whole diagnostic value of
+        this list.
+        """
+        from app.features.employees.models import Employee
+
         stmt = (
             select(
                 BiometricRawLog.id.label("id"),
@@ -210,12 +220,33 @@ class RawLogRepository(BaseRepository[BiometricRawLog]):
                 BiometricRawLog.processed.label("processed"),
                 BiometricDevice.serial_no.label("serial_no"),
                 BiometricDevice.location.label("location"),
+                BiometricDevice.id.label("device_id"),
+                Employee.id.label("employee_id"),
+                Employee.first_name.label("employee_first_name"),
+                Employee.last_name.label("employee_last_name"),
+                Employee.employee_no.label("employee_no"),
             )
             .join(BiometricDevice, BiometricDevice.id == BiometricRawLog.device_id)
+            .outerjoin(
+                BiometricEmployeeMap,
+                (BiometricEmployeeMap.device_id == BiometricRawLog.device_id)
+                & (
+                    BiometricEmployeeMap.device_user_id
+                    == BiometricRawLog.device_user_id
+                ),
+            )
+            .outerjoin(Employee, Employee.id == BiometricEmployeeMap.employee_id)
             .order_by(BiometricRawLog.punch_time.desc())
             .limit(limit)
         )
-        return self.rows(stmt)
+        rows = self.rows(stmt)
+        for row in rows:
+            first = row.pop("employee_first_name", None)
+            last = row.pop("employee_last_name", None)
+            row["employee_name"] = (
+                " ".join(part for part in (first, last) if part) or None
+            )
+        return rows
 
     def count_since(self, since: datetime) -> int:
         stmt = (

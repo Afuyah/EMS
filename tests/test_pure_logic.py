@@ -132,14 +132,44 @@ class TestResolvePunch:
         assert result.action == "clock_out"
         assert result.worked_minutes == 8 * 60
 
-    def test_third_punch_is_ignored(self):
+    def test_third_punch_after_a_break_opens_a_second_session(self):
+        """A day may hold several sessions, so a later punch is not discarded.
+
+        Someone who clocks out at 14:00 and returns at 17:00 has worked two
+        stints. Discarding the second one — which a single clock-in/clock-out
+        pair did — silently loses their afternoon.
+        """
         result = resolve_punch(
-            punch=PunchEvent(utc(15, 0), PunchType.OUT),
+            punch=PunchEvent(utc(17, 0), PunchType.OUT),
+            work_date=WORK_DATE, tz_name=TZ, policy=POLICY,
+            existing_clock_in=utc(6, 0), existing_clock_out=utc(14, 0),
+        )
+        assert result.action == "clock_in"
+        assert result.reason == "new_session_after_break"
+        assert len(result.sessions) == 2
+        assert result.sessions[1].is_open
+        # The first stint is preserved, not overwritten.
+        assert result.worked_minutes == 8 * 60
+
+    def test_a_stray_scan_shortly_after_clocking_out_is_ignored(self):
+        """Too soon to be a return to work, too late to be a duplicate."""
+        result = resolve_punch(
+            punch=PunchEvent(utc(14, 30), PunchType.OUT),
             work_date=WORK_DATE, tz_name=TZ, policy=POLICY,
             existing_clock_in=utc(6, 0), existing_clock_out=utc(14, 0),
         )
         assert result.action == "ignored"
-        assert result.reason == "day_already_closed"
+        assert result.reason == "brief_absence_not_a_new_session"
+        assert len(result.sessions) == 1
+
+    def test_replaying_the_clock_out_is_a_duplicate(self):
+        result = resolve_punch(
+            punch=PunchEvent(utc(14, 0), PunchType.OUT),
+            work_date=WORK_DATE, tz_name=TZ, policy=POLICY,
+            existing_clock_in=utc(6, 0), existing_clock_out=utc(14, 0),
+        )
+        assert result.action == "ignored"
+        assert result.reason == "duplicate_after_clock_out"
 
     def test_punch_before_clock_in_is_ignored(self):
         result = resolve_punch(

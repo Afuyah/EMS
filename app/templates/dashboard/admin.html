@@ -132,25 +132,23 @@
       </div>
     {% endcall %}
 
-    {% call card('Recent punches', 'Live from biometric devices') %}
-      <div class="-my-2 divide-y divide-slate-100">
-        {% for punch in punches %}
-          <div class="flex items-center gap-3 py-2.5">
-            {{ avatar(punch.first_name, punch.last_name, 'brand') }}
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-sm font-medium text-slate-900">{{ punch.first_name }} {{ punch.last_name }}</p>
-              <p class="text-xs text-slate-500">
-                {{ punch.clock_in.strftime('%H:%M') if punch.clock_in else '—' }}
-                {% if punch.clock_out %}<span class="text-slate-300">&rarr;</span> {{ punch.clock_out.strftime('%H:%M') }}{% endif %}
-              </p>
-            </div>
-            {{ status_badge(punch.status) }}
-          </div>
-        {% else %}
-          <p class="py-6 text-center text-sm text-slate-500">No punches recorded yet.</p>
-        {% endfor %}
-      </div>
-    {% endcall %}
+    {# The raw device stream, not resolved attendance rows.
+       The panel above shows attendance, so an unmatched punch is invisible
+       there — which is exactly when you most need to see it. This polls the
+       same fragment the attendance board uses, so punches appear within
+       seconds of someone scanning.
+
+       `live_punches` is passed explicitly: this template already has a
+       `punches` variable holding attendance rows, so the fragment's expected
+       name would collide. #}
+    <div id="live-punches"
+         hx-get="{{ url_for('views.attendance_live') }}"
+         hx-trigger="load, every 5s"
+         hx-swap="innerHTML">
+      {% with punches = live_punches %}
+        {% include "attendance/_live.html" %}
+      {% endwith %}
+    </div>
   </div>
 
   {% call card('Latest activity') %}

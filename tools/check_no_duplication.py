@@ -26,7 +26,9 @@ ADMIN_PAGES: dict[str, list[tuple[str, str]]] = {
         ("attendance trend card", "Attendance trend"),
         ("health card", "Attendance health"),
         ("most late card", "Most late"),
-        ("recent punches card", "Recent punches"),
+        # The dashboard shows the live raw device stream rather than a list of
+        # resolved attendance rows, so an unmatched punch is visible there too.
+        ("live punch stream", "Live punch stream"),
         ("latest activity card", "Latest activity"),
     ],
     "/app/leave/request": [

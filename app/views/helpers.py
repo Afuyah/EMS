@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from flask import (
     abort,
+    current_app,
     flash,
     g,
     redirect,
@@ -28,6 +29,41 @@ from app.core.permissions import Principal, current_principal
 from app.features.auth.constants import Role
 
 
+def is_htmx_request() -> bool:
+    """Whether this request came from HTMX rather than a page navigation."""
+    return request.headers.get("HX-Request") == "true"
+
+
+def sign_in_again_response():
+    """Send an expired caller back to sign-in, cleanly.
+
+    A plain ``302`` is wrong for HTMX: it follows redirects transparently, so it
+    would fetch the sign-in **page** and swap that HTML into whatever fragment
+    was refreshing. With a live board, a punch stream and a notification bell all
+    polling, the user ends up with a stack of sign-in pages nested inside the
+    page they were on.
+
+    ``HX-Redirect`` tells HTMX to perform a real navigation instead of a swap, so
+    exactly one clean sign-in page appears. Ordinary navigations keep the plain
+    redirect, and the ``next`` parameter still round-trips.
+
+    Note the ``next`` value differs by caller. For a real navigation the current
+    path *is* the page the user wanted, so it is worth returning to. For an HTMX
+    poll it is a fragment URL — frequently polled, never a destination — so
+    sending it would drop the user on a bare partial after signing in. HTMX
+    callers therefore get a plain sign-in URL, and their dashboard is the landing
+    page instead.
+    """
+    if is_htmx_request():
+        # 200 with HX-Redirect: HTMX acts on the header and never swaps. A
+        # non-2xx status would take the error path instead.
+        response = current_app.response_class("", status=200, mimetype="text/plain")
+        response.headers["HX-Redirect"] = url_for("views.login")
+        return response
+
+    return redirect(url_for("views.login", next=request.full_path))
+
+
 def view_login_required(view: Callable | None = None) -> Callable:
     """Require a valid access token, redirecting browsers to the login page.
 
@@ -41,7 +77,7 @@ def view_login_required(view: Callable | None = None) -> Callable:
             try:
                 verify_jwt_in_request()
             except Exception:  # noqa: BLE001 - any failure means "not logged in"
-                return redirect(url_for("views.login", next=request.full_path))
+                return sign_in_again_response()
             return inner(*args, **kwargs)
 
         return wrapper

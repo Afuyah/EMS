@@ -63,6 +63,9 @@ def _admin_dashboard():
         top_late=top_late,
         trend=_fill_trend(trend, window_start, today),
         punches=punches,
+        # Raw device punches for the live stream — distinct from `punches`
+        # above, which are resolved attendance rows.
+        live_punches=_devices.recent_raw_logs(limit=10),
         department_split=department_split,
         in_queue=in_queue,
         awaiting_employee=awaiting_employee,

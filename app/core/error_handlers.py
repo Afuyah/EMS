@@ -8,7 +8,7 @@ never leak.
 
 from __future__ import annotations
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, url_for
 from werkzeug.exceptions import HTTPException
 
 from app.core.exceptions import AppError, AuthenticationError
@@ -39,6 +39,15 @@ def register_error_handlers(app: Flask) -> None:
         if _is_html_request():
             flash_message = error.message
             if status == 401:
+                # An expired session must not be swapped into a page as HTML.
+                # HTMX callers are told to navigate instead; see
+                # app.views.helpers.sign_in_again_response.
+                if request.headers.get("HX-Request") == "true":
+                    response = app.response_class(
+                        "", status=200, mimetype="text/plain"
+                    )
+                    response.headers["HX-Redirect"] = url_for("views.login")
+                    return response
                 # Views handle redirects themselves; re-raise for clarity.
                 return render_template(
                     "errors/error.html",
