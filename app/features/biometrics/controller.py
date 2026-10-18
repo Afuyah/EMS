@@ -51,13 +51,37 @@ class BiometricsController:
     def authenticate_adms_device(self, serial_no: str, comm_key: str | None):
         """Verify a device calling the ADMS endpoints.
 
-        Differs from :meth:`authenticate_device` in one way: a terminal whose
-        communication password was never set sends the factory value, and ADMS
-        has no other credential to offer, so that default is accepted here.
+        Differs from :meth:`authenticate_device` in two ways: a terminal whose
+        communication password was never set sends the factory value, and that is
+        accepted here because ADMS has no other credential to offer; and any
+        contact from a *known* serial is recorded before authentication is
+        judged, so a device knocking with the wrong key is visible as "reaching
+        us but refused" rather than as absent.
         """
+        self.note_contact(serial_no, comm_key or "")
         return self.service.authenticate(
             serial_no, comm_key or "", allow_default_comm_key=True
         )
+
+    def note_contact(self, serial_no: str, comm_key: str = "") -> None:
+        """Record that a device claiming ``serial_no`` just made contact.
+
+        Best effort and self-contained: this runs on the device's hot path and
+        before authentication, so a database problem here must never turn a
+        reachable device into a failed request. Unknown serials are ignored, so
+        an arbitrary string cannot create rows.
+        """
+        if not serial_no:
+            return
+        try:
+            device = self.service.devices.get_by_serial(serial_no)
+            if device is None:
+                return
+            self.service.devices.touch_contact(device)
+            db.session.commit()
+        except Exception:  # noqa: BLE001 - diagnostics must never break ingestion
+            db.session.rollback()
+            logger.debug("could not record contact for SN=%s", serial_no, exc_info=True)
 
     # ---- punch ingestion -------------------------------------------------
     def ingest_punch(self, *, device, payload: dict, raw_headers: dict | None = None):
@@ -288,6 +312,12 @@ class BiometricsController:
                 "is_online": device.is_online,
                 "last_seen_at": device.last_seen_at.isoformat()
                 if device.last_seen_at
+                else None,
+                # Reachable vs working: a device with contact but no last_seen is
+                # knocking and being refused, which is a credential problem, not
+                # a connectivity one.
+                "last_contact_at": device.last_contact_at.isoformat()
+                if device.last_contact_at
                 else None,
                 "mapped_employees": len(device.mappings),
             }

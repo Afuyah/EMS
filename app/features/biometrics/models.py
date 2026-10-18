@@ -39,7 +39,16 @@ class BiometricDevice(TimestampMixin, db.Model):
     )
     secret_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    #: Last time this device authenticated and delivered data ("working").
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Last time *any* request arrived claiming this serial ("knocking"), even one
+    #: that failed authentication.
+    #:
+    #: These answer two different questions, and conflating them is misleading:
+    #: a terminal with a mistyped CommKey is reaching the server perfectly well
+    #: while being refused, and would otherwise look like it had never connected
+    #: — sending someone to check cables when the credential is the problem.
+    last_contact_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     mappings: Mapped[list["BiometricEmployeeMap"]] = relationship(
         back_populates="device",

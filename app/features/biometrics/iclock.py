@@ -122,6 +122,13 @@ def handshake():
     if refusal is not None:
         return refusal
 
+    # A successful handshake proves the device is configured correctly *and*
+    # authorised. That is worth recording as "working" immediately: waiting for
+    # the first punch would leave a healthy device looking offline until someone
+    # happened to scan, which is exactly the confusion the two timestamps exist
+    # to prevent.
+    _controller.heartbeat_for_serial(device.serial_no)
+
     logger.info(
         "ADMS handshake SN=%s options=%s commkey=%s",
         device.serial_no,

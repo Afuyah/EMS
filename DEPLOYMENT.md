@@ -290,6 +290,80 @@ flask --app wsgi reprocess-punches
 
 Idempotent, so running it repeatedly is safe.
 
+### Removing a test punch (`tools/simulate_device.py`)
+
+The simulator posts a fixed record — device user `1` at `2026-10-16 08:12:33` —
+so running it against production leaves a **real** punch in the database. Remove
+it with:
+
+```bash
+flask --app wsgi purge-test-punches          # report only
+flask --app wsgi purge-test-punches --yes    # delete
+```
+
+The match is deliberately narrow (that user *and* that moment, to the minute) so a
+genuine punch cannot be caught. Add `--read-only` to the simulator to avoid
+writing at all.
+
+### "Is the device connecting?"
+
+Two different questions, and the Devices page answers both:
+
+| Column | Meaning |
+| --- | --- |
+| Last working contact (`last_seen_at`) | the device authenticated and delivered data |
+| Last contact (`last_contact_at`) | a request arrived claiming that serial, even if refused |
+
+A device showing **knocking** is reaching the server with a wrong CommKey — a
+credential problem, not a cable problem. A device showing **offline** with "never
+contacted this system" is not reaching you at all.
+
+In the **web** service logs, filter for `ADMS`:
+
+| Line | Meaning |
+| --- | --- |
+| `ADMS handshake SN=...` | authenticated, about to push |
+| `ADMS request refused SN=...` | reaching us, wrong serial or CommKey |
+| nothing at all | never arrived — check the device's network and server address |
+
+### If the device still cannot connect: run the bridge
+
+Some firmware cannot do HTTPS at all, or has a CA bundle old enough to reject a
+Let's Encrypt certificate. Since Railway redirects plain HTTP (including `POST`),
+such a device can never deliver a punch directly.
+
+`tools/adms_bridge.py` solves this. Run it on any always-on machine on the
+**same LAN as the device** — a small PC, a Raspberry Pi, a NAS:
+
+```bash
+python tools/adms_bridge.py --upstream https://<your-domain>
+```
+
+It listens for the device over plain HTTP and forwards everything to the
+deployment over verified HTTPS, returning the reply unchanged. The device cannot
+tell the difference. Then configure the device as:
+
+| Device menu field | Value |
+| --- | --- |
+| Server Mode | `ADMS` |
+| Enable Domain Name | **OFF** (this is what makes the port field visible) |
+| Server Address | the bridge machine's LAN IP, e.g. `192.168.1.50` |
+| Server Port | `8081` — the factory default, so no change needed |
+| HTTPS | OFF |
+| Comm Key | the device's six-digit key |
+
+It logs every forwarded request, so you can watch the device arrive:
+
+```
+[bridge] GET  /iclock/cdata?SN=CO8D... -> 200 (26 bytes)
+[bridge] POST /iclock/cdata?SN=CO8D... -> 200 (2 bytes)
+```
+
+Standard library only — no packages to install. The default port is **8081** on
+purpose: it matches the ZKTeco factory default, so the device needs no change,
+and it is above 1024, so the bridge needs no administrator rights. Pass
+`--port <n>` if your firmware shows something else.
+
 ### Why step 2 matters
 
 `seed-defaults` creates the configuration the app assumes exists:
@@ -473,7 +547,36 @@ ZKTeco terminals that support **ADMS** push their records to a server you
 configure. The MB20-VL lists ADMS as a standard function, so it can talk to this
 deployment directly — no local PC or SDK bridge.
 
-### What to type into the device
+### The menu, and what its factory defaults mean
+
+A typical Cloud Server Setting screen looks like:
+
+```
+Server Mode          : [ ADMS ]            <- the mode to choose
+Enable Domain Name   : [toggle]            <- decides whether a port is shown
+Server Address       : 0.0.0.0             <- factory default: points nowhere
+Server Port          : 8081                <- shown only when the toggle is off
+Proxy Server         : [toggle]            <- leave off
+HTTPS                : [toggle]            <- decides 443 vs 80
+```
+
+Two of those defaults are traps:
+
+* **`0.0.0.0` in Server Address means "nowhere".** Leaving it is the single most
+  common reason a terminal never connects. It must be replaced.
+* **`8081` is a factory port**, not something this deployment listens on.
+
+**The domain-name toggle decides which address format the field accepts:**
+
+| Toggle | Address field expects | Port field | Use it when |
+| --- | --- | --- | --- |
+| **ON** | a hostname | **hidden** — the HTTPS toggle picks the port | talking to Railway directly |
+| **OFF** | an **IP address** | visible | talking to a local bridge |
+
+Railway gives you a hostname, not a stable IP, so the direct route needs the
+toggle **ON**.
+
+### Direct to Railway (try this first)
 
 Register the device first on **Devices** in the app. Registering (or rotating)
 shows a **Comm Key** — a six-digit number. That number is the credential, and it
@@ -481,9 +584,36 @@ is shown **once**; it is stored hashed.
 
 | Device menu field | Value |
 | --- | --- |
+| Server Mode | `ADMS` |
+| Enable Domain Name | **ON** |
 | Server Address | your Railway domain, **without** `https://`, e.g. `kenems.up.railway.app` |
-| Server Port | `443` (plain `80` also works) |
+| Server Port | *(hidden once the toggle is on)* |
+| HTTPS | **ON** → uses port 443 |
+| Proxy Server | OFF |
 | Comm Key | the six-digit number shown when you registered the device |
+
+**"Enable Domain Name" is not optional here.** With it off the menu asks for an
+**IP address and a port**; Railway does not give you a stable IP, so the device
+could never reach it. With it on, the port field is hidden and the **HTTPS toggle
+decides** the port: on means 443, off means 80.
+
+**HTTPS must be ON**, because Railway answers plain HTTP with a redirect:
+
+```bash
+curl -i http://<your-domain>/iclock/cdata
+# HTTP/1.1 301 Moved Permanently
+# Location: https://<your-domain>/iclock/cdata
+```
+
+That redirect applies to `POST` too. ADMS firmware generally will not follow it,
+or follows it as a `GET` and loses the body — so a device pushing over HTTP
+silently never delivers a punch. Verified against this deployment; an earlier
+note in this file claiming port 80 worked was wrong.
+
+The edge also accepts **TLS 1.2**, not only 1.3, so recent firmware can connect.
+The certificate is **Let's Encrypt** (`*.up.railway.app`), which is the usual
+sticking point: firmware with a CA bundle predating Let's Encrypt's roots will
+fail verification even though the handshake negotiates.
 
 The menu path varies by firmware — usually **Menu → Comm. → Cloud Server
 Setting**, **ADMS**, or **Communication Password**. The device's own serial

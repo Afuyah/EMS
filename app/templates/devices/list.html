@@ -199,15 +199,41 @@
               <td class="px-5 py-2 text-slate-600">{{ device.location or '—' }}</td>
               <td class="px-5 py-2 text-slate-600">{{ device.vendor }}</td>
               <td class="px-5 py-2 text-xs text-slate-500">
-                {{ device.last_seen_at.strftime('%d %b %Y %H:%M') if device.last_seen_at else 'never' }}
+                {% if device.last_seen_at %}
+                  {{ device.last_seen_at.strftime('%d %b %Y %H:%M') }}
+                {% else %}
+                  never
+                {% endif %}
+                {# "Last contact" answers a different question from "last working
+                   contact": a terminal knocking with the wrong CommKey reaches us
+                   perfectly well while being refused. Showing only the latter
+                   sends you looking at cables when the credential is the problem. #}
+                {% if device.last_contact_at and not device.last_seen_at %}
+                  <div class="mt-0.5 text-amber-700">
+                    contacted {{ device.last_contact_at.strftime('%d %b %H:%M') }}, refused
+                  </div>
+                {% elif device.last_contact_at %}
+                  <div class="mt-0.5 text-slate-400">
+                    last seen {{ device.last_contact_at.strftime('%d %b %H:%M') }}
+                  </div>
+                {% else %}
+                  <div class="mt-0.5 text-rose-600">never contacted this system</div>
+                {% endif %}
               </td>
               <td class="px-5 py-2 text-slate-600">{{ device.mappings|length }}</td>
               <td class="px-5 py-2">
                 <div class="flex flex-col gap-1">
                   <span class="inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset
                                {{ 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' if device.is_online
-                                  else 'bg-rose-50 text-rose-700 ring-rose-600/20' }}">
-                    {{ 'online' if device.is_online else 'offline' }}
+                                  else ('bg-amber-50 text-amber-700 ring-amber-600/20' if device.last_contact_at
+                                        else 'bg-rose-50 text-rose-700 ring-rose-600/20') }}">
+                    {% if device.is_online %}
+                      online
+                    {% elif device.last_contact_at %}
+                      knocking
+                    {% else %}
+                      offline
+                    {% endif %}
                   </span>
                   {% if not device.is_active %}
                     <span class="text-xs text-slate-500">disabled</span>

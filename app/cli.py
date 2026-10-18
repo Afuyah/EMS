@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import importlib
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import click
 from flask import Flask, current_app
@@ -461,6 +461,137 @@ def register_cli(app: Flask) -> None:
             )
             raise SystemExit(1)
         click.secho("Done.", fg="green")
+
+    @app.cli.command("purge-test-punches")
+    @click.option("--serial", default=None, help="Only this device serial.")
+    @click.option("--user", "device_user_id", default="1", show_default=True,
+                  help="Device user id the simulator posts as.")
+    @click.option("--timestamp", default="2026-10-16 08:12:33", show_default=True,
+                  help="Punch time the simulator sends (UTC).")
+    @click.option("--yes", is_flag=True,
+                  help="Delete. Without this it only reports what it found.")
+    def purge_test_punches_command(
+        serial: str | None,
+        device_user_id: str,
+        timestamp: str,
+        yes: bool,
+    ) -> None:
+        """Remove punches written by ``tools/simulate_device.py``.
+
+        The simulator posts a fixed line — device user ``1`` at
+        ``2026-10-16 08:12:33`` — so a test run leaves a punch in whatever
+        database it was pointed at. Against production that is a fake punch
+        attributed to whichever employee maps to device user 1, and it pollutes
+        the live stream.
+
+        The match is deliberately narrow (that exact user *and* that exact
+        moment, to the minute) so a real punch cannot be caught by it. The
+        attendance row the punch produced is removed only when its clock-in is
+        that same moment, i.e. when the simulator is what created it.
+
+        Runs as a dry run unless ``--yes`` is passed.
+        """
+        from app.core.database import db
+        from app.features.attendance.models import AttendanceDaily
+        from app.features.biometrics.models import BiometricDevice, BiometricRawLog
+
+        try:
+            _date, moment = timestamp.split(" ", 1)
+            target = datetime.fromisoformat(f"{_date}T{moment}")
+        except ValueError:
+            raise click.ClickException(
+                f"--timestamp must look like '2026-10-16 08:12:33', got {timestamp!r}"
+            )
+
+        window_start = target - timedelta(minutes=1)
+        window_end = target + timedelta(minutes=1)
+
+        query = BiometricRawLog.query.filter(
+            BiometricRawLog.device_user_id == str(device_user_id),
+            BiometricRawLog.punch_time >= window_start,
+            BiometricRawLog.punch_time <= window_end,
+        )
+        if serial:
+            device = BiometricDevice.query.filter_by(serial_no=serial.strip()).first()
+            if device is None:
+                raise click.ClickException(f"Device {serial!r} is not registered.")
+            query = query.filter(BiometricRawLog.device_id == device.id)
+
+        logs = query.all()
+        if not logs:
+            click.secho(
+                f"No simulator punches found (user {device_user_id} at {timestamp}).",
+                fg="green",
+            )
+            return
+
+        click.secho(f"Found {len(logs)} matching punch(es):", bold=True)
+        for raw in logs:
+            device = db.session.get(BiometricDevice, raw.device_id)
+            click.echo(
+                f"  id={raw.id} device={device.serial_no if device else '?'} "
+                f"user={raw.device_user_id} at={raw.punch_time} "
+                f"processed={raw.processed}"
+            )
+
+        # The attendance row this punch produced, identified by its clock-in.
+        affected_days = []
+        for raw in logs:
+            mapping = (
+                db.session.query(BiometricRawLog)
+                .filter(BiometricRawLog.id == raw.id)
+                .first()
+            )
+            from app.features.biometrics.models import BiometricEmployeeMap
+
+            match = BiometricEmployeeMap.query.filter_by(
+                device_id=raw.device_id, device_user_id=raw.device_user_id
+            ).first()
+            if match is None:
+                continue
+            row = AttendanceDaily.query.filter(
+                AttendanceDaily.employee_id == match.employee_id,
+                AttendanceDaily.work_date == raw.punch_time.date(),
+            ).first()
+            if row is None:
+                continue
+            # Only when the simulator's punch is what opened the day.
+            if row.clock_in is not None and (
+                abs((row.clock_in.replace(tzinfo=None) - target).total_seconds()) <= 60
+            ):
+                affected_days.append(row)
+
+        if affected_days:
+            click.secho(
+                f"\nAlso removing {len(affected_days)} attendance row(s) it created:",
+                bold=True,
+            )
+            for row in affected_days:
+                click.echo(
+                    f"  employee_id={row.employee_id} date={row.work_date} "
+                    f"status={row.status} clock_in={row.clock_in}"
+                )
+
+        if not yes:
+            click.echo("")
+            click.secho(
+                "Dry run — nothing deleted. Re-run with --yes to remove these.",
+                fg="yellow",
+                bold=True,
+            )
+            return
+
+        for row in affected_days:
+            db.session.delete(row)
+        for raw in logs:
+            db.session.delete(raw)
+        db.session.commit()
+
+        click.secho(
+            f"Deleted {len(logs)} punch(es) and {len(affected_days)} attendance row(s).",
+            fg="green",
+            bold=True,
+        )
 
     @app.cli.command("routes")
     def routes_command() -> None:

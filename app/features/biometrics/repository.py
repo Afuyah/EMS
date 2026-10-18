@@ -46,6 +46,20 @@ class DeviceRepository(BaseRepository[BiometricDevice]):
         db.session.flush()
         return device
 
+    def touch_contact(
+        self, device: BiometricDevice, *, when: datetime | None = None
+    ) -> BiometricDevice:
+        """Record that a device made contact, whether or not it authenticated.
+
+        Deliberately separate from :meth:`touch`: ``last_seen_at`` means "the
+        device is working", this means "the device is reachable". A mistyped
+        CommKey produces the second without the first, and that difference is
+        the whole diagnostic.
+        """
+        device.last_contact_at = when or utcnow()
+        db.session.flush()
+        return device
+
     def offline_since(self, cutoff: datetime) -> list[BiometricDevice]:
         """Active devices not seen since ``cutoff`` (never-seen included)."""
         stmt = select(BiometricDevice).where(

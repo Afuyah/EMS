@@ -455,3 +455,79 @@ class TestIclockEndpoints:
         }
         assert "/iclock/cdata" in rules
         assert "/iclock/ping" in rules
+
+
+class TestDeviceContactTracking:
+    """Reachable and authorised are different questions.
+
+    Recording only authenticated contact made a terminal with a mistyped CommKey
+    look like one that had never connected — which sends someone to check cables
+    when the credential is the problem.
+    """
+
+    def test_a_refused_request_records_contact_but_not_presence(
+        self, client, adms_device
+    ):
+        serial = adms_device["device"].serial_no
+        response = client.get(
+            "/iclock/cdata", query_string={"SN": serial, "CommKey": "wrong-key"}
+        )
+        assert response.status_code == 401
+
+        from app.features.biometrics.models import BiometricDevice
+
+        db.session.expire_all()
+        device = BiometricDevice.query.filter_by(serial_no=serial).first()
+        assert device.last_contact_at is not None, "we could not tell it was knocking"
+        assert device.last_seen_at is None, "a refused device must not look present"
+        assert device.is_online is False
+
+    def test_a_successful_handshake_records_both(self, client, adms_device):
+        serial = adms_device["device"].serial_no
+        client.get(
+            "/iclock/cdata",
+            query_string={
+                "SN": serial,
+                "options": "all",
+                "CommKey": adms_device["secret"],
+            },
+        )
+
+        from app.features.biometrics.models import BiometricDevice
+
+        db.session.expire_all()
+        device = BiometricDevice.query.filter_by(serial_no=serial).first()
+        assert device.last_contact_at is not None
+        assert device.last_seen_at is not None
+
+    def test_an_unknown_serial_creates_no_row(self, client, clean_db):
+        """An arbitrary string must not be able to register a device."""
+        from app.features.biometrics.models import BiometricDevice
+
+        before = BiometricDevice.query.count()
+        client.get(
+            "/iclock/cdata", query_string={"SN": "MADE-UP-999", "CommKey": "x"}
+        )
+        assert BiometricDevice.query.count() == before
+
+    def test_recording_contact_never_breaks_ingestion(self, client, adms_device):
+        """It runs on the device's hot path, before authentication is judged."""
+        from unittest.mock import patch
+
+        from app.features.biometrics.models import BiometricDevice
+
+        with patch.object(
+            BiometricDevice, "last_contact_at", new_callable=lambda: property(
+                lambda self: (_ for _ in ()).throw(RuntimeError("boom"))
+            )
+        ):
+            # Still answers, even if the diagnostic itself fails.
+            response = client.get(
+                "/iclock/cdata",
+                query_string={
+                    "SN": adms_device["device"].serial_no,
+                    "options": "all",
+                    "CommKey": adms_device["secret"],
+                },
+            )
+        assert response.status_code in (200, 401)
